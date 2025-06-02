@@ -150,9 +150,8 @@ func (p *SubscriptionProcessor) processExpiredSubscriptions() error {
 		return tx.Raw(`
 			SELECT s.* FROM "Subscription" s
 			WHERE s.expire_at < ?AND s.status = ?
-			AND s.plan_name != ?
 			LIMIT ?
-		`, time.Now().UTC().Add(10*time.Minute), types.SubscriptionStatusNormal, types.FreeSubscriptionPlanName, BatchSize).Scan(&expiredSubscriptions).Error
+		`, time.Now().UTC().Add(10*time.Minute), types.SubscriptionStatusNormal, BatchSize).Scan(&expiredSubscriptions).Error
 	})
 
 	if err != nil {
@@ -237,6 +236,14 @@ func (p *SubscriptionProcessor) HandlerSubscriptionTransaction(subscription *typ
 		//		return fmt.Errorf("failed to update subscription status: %w", err)
 		//	}
 		//}
+		// 直接创建一个订阅交易记录，状态为 NoNeed
+		subTransaction.PayStatus = types.SubscriptionPayStatusNoNeed
+		err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
+			return tx.Create(&subTransaction).Error
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create subscription transaction: %w", err)
+		}
 		return nil
 	}
 
