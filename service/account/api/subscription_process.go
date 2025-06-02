@@ -236,9 +236,9 @@ func (p *SubscriptionProcessor) HandlerSubscriptionTransaction(subscription *typ
 		//		return fmt.Errorf("failed to update subscription status: %w", err)
 		//	}
 		//}
-		
+
 		// todo 检查是否满足免费订阅续费条件
-		
+
 		// 直接创建一个订阅交易记录，状态为 NoNeed
 		subTransaction.PayStatus = types.SubscriptionPayStatusNoNeed
 		err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
