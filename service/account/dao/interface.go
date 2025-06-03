@@ -756,6 +756,11 @@ func (m *MongoDB) GetAppCosts(req *helper.AppCostsReq) (results *common.AppCosts
 						{Key: "app_name", Value: 1},
 						{Key: "app_type", Value: 1},
 					}}},
+					bson.D{{Key: "$sort", Value: bson.D{
+						{Key: "time", Value: -1},
+						{Key: "app_name", Value: 1},
+						{Key: "_id", Value: 1},
+					}}},
 				}},
 			}}},
 			{{Key: "$project", Value: bson.D{
@@ -763,6 +768,11 @@ func (m *MongoDB) GetAppCosts(req *helper.AppCostsReq) (results *common.AppCosts
 			}}},
 			{{Key: "$unwind", Value: "$combined"}},
 			{{Key: "$replaceRoot", Value: bson.D{{Key: "newRoot", Value: "$combined"}}}},
+			{{Key: "$sort", Value: bson.D{
+				{Key: "time", Value: -1},
+				{Key: "app_name", Value: 1},
+				{Key: "_id", Value: 1},
+			}}},
 			{{Key: "$facet", Value: bson.D{
 				{Key: "totalRecords", Value: bson.A{
 					bson.D{{Key: "$count", Value: "count"}},
