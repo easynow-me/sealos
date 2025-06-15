@@ -80,7 +80,7 @@ function CostOverview() {
   const { data: credit_raw } = useQuery({
     queryKey: ['getCreditsInfo'],
     queryFn: () =>
-      request.post<any, ApiResp<{ deductionBalance: number; balance: number,credits:number,deductionCredits:number }>>(
+      request.post<any, ApiResp<{ deductionBalance: number; balance: number; credits: number; deductionCredits: number }>>(
         '/api/account/getCreditsInfo'
       ),
     staleTime: 0

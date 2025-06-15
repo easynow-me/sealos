@@ -8,29 +8,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!client) return;
     const response = await client.post('/payment/v1alpha1/credits/info', {});
 
-    console.log(response.data);
-
     const data = response.data as {
       credits?: {
-        UserUID: string;
-        Balance: number;
-        DeductionBalance: number;
-        Credits: number;
-        DeductionCredits: number;
+        userUid: string;
+        balance: number;
+        deductionBalance: number;
+        credits: number;
+        deductionCredits: number;
 
-        KYCDeductionCreditsDeductionBalance: number;
-        KYCDeductionCreditsBalance: number;
-        CurrentPlanCreditsBalance: number;
-        CurrentPlanCreditsDeductionBalance: number;
+        kycDeductionCreditsDeductionBalance: number;
+        kycDeductionCreditsBalance: number;
+        currentPlanCreditsBalance: number;
+        currentPlanCreditsDeductionBalance: number;
       };
     };
     if (!data?.credits) return jsonRes(res, { code: 404, message: 'credit is not found' });
     return jsonRes<{ balance: number; deductionBalance: number,credits:number,deductionCredits:number }>(res, {
       data: {
-        balance: data.credits.Balance,
-        deductionBalance: data.credits.DeductionBalance,
-        credits: data.credits.Credits,
-        deductionCredits: data.credits.DeductionCredits
+        balance: data.credits.balance,
+        deductionBalance: data.credits.deductionBalance,
+        credits: data.credits.currentPlanCreditsBalance,
+        deductionCredits: data.credits.currentPlanCreditsDeductionBalance
       }
     });
   } catch (error) {
