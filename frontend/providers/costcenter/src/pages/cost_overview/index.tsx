@@ -76,6 +76,20 @@ function CostOverview() {
   let rechargAmount = balance_raw?.data?.balance || 0;
   let expenditureAmount = balance_raw?.data?.deductionBalance || 0;
   let balance = rechargAmount - expenditureAmount;
+
+  const { data: credit_raw } = useQuery({
+    queryKey: ['getAccount'],
+    queryFn: () =>
+      request.post<any, ApiResp<{ deductionBalance: number; balance: number,credits:number,deductionCredits:number }>>(
+        '/api/account/getCreditsInfo'
+      ),
+    staleTime: 0
+  });
+
+  let totalCredits = credit_raw?.data?.credits || 0;
+  let deductionCredits = credit_raw?.data?.deductionCredits || 0;
+  let credits = totalCredits - deductionCredits;
+
   return (
     <RechargeContext.Provider value={{ rechargeRef }}>
       <Flex h={'100%'} p={'8px'}>
@@ -84,7 +98,7 @@ function CostOverview() {
             <Box borderRadius="12px" display={['block', 'block', 'block', 'none']}>
               <Flex direction={['column', 'column', 'row', 'row']} justify={'space-between'}>
                 <Box alignSelf={'center'}>
-                  <UserCard balance={balance} />
+                  <UserCard balance={balance} credits={credits}/>
                 </Box>
                 <Buget expenditureAmount={expenditureAmount}></Buget>
               </Flex>
@@ -116,7 +130,7 @@ function CostOverview() {
           justify={'flex-start'}
           gap="28px"
         >
-          <UserCard balance={balance} />
+          <UserCard balance={balance} credits={credits} />
           <GiftCode />
           <Buget expenditureAmount={expenditureAmount}></Buget>
         </Flex>

@@ -14,7 +14,7 @@ import { memo, useContext, useEffect, useMemo, useRef } from 'react';
 import RechargeModal from '../../RechargeModal';
 import TransferModal from '../../TransferModal';
 
-export default memo(function UserCard({ balance }: { balance: number }) {
+export default memo(function UserCard({ balance , credits }: { balance: number , credits:number}) {
   const getSession = useSessionStore((state) => state.getSession);
   const transferEnabled = useEnvStore((state) => state.transferEnabled);
   const rechargeEnabled = useEnvStore((state) => state.rechargeEnabled);
@@ -102,7 +102,7 @@ export default memo(function UserCard({ balance }: { balance: number }) {
             alignItems={'center'}
           >
             <CurrencySymbol color={'white'} boxSize="20px" type={currency} />
-            <Text ml="6px">{displayMoney(formatMoney(balance))}</Text>
+            <Text ml="6px">{displayMoney(formatMoney(balance))} + 🎁{displayMoney(formatMoney(credits))}</Text>
           </Flex>
           <Flex alignItems="center" alignSelf={'center'} gap="10px" mt={'20px !important'}>
             {transferEnabled && (
