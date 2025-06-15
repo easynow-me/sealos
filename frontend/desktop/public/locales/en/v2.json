@@ -126,7 +126,7 @@
   "verification_message": "A verification code was sent to {{email}}. Enter it below to continue.",
   "verifying": "verifying",
   "workspace_create": "Let's create your workspace",
-  "workspace_welcome": "Welcome to Sealos",
+  "workspace_welcome": "Welcome to ",
   "worspace_heading_description": "Organize, collaborate, and manage apps efficiently with isolated workspaces for your team",
   "you_may_invite_memebers_later": "You may invite members later",
   "your_current_plan": "Your current plan"
