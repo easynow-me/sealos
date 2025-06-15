@@ -8,6 +8,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!client) return;
     const response = await client.post('/payment/v1alpha1/credits/info', {});
 
+    console.log(response.data);
+
     const data = response.data as {
       credits?: {
         UserUID: string;
