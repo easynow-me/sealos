@@ -6,7 +6,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const client = await makeAPIClientByHeader(req, res);
     if (!client) return;
-    const response = await client.post('/account/v1alpha1/credits/info', {});
+    const response = await client.post('/payment/v1alpha1/credits/info', {});
 
     const data = response.data as {
       credits?: {
