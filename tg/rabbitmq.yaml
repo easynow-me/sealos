@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-rabbitmq
+  namespace: telegram
+data:
+  enabled_plugins: |
+    [rabbitmq_federation_management,rabbitmq_management,rabbitmq_mqtt,rabbitmq_web_mqtt,rabbitmq_stomp,rabbitmq_prometheus].
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  labels:
+    app: rabbitmq
+    version: v1
+  namespace: telegram
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rabbitmq
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+        version: v1
+    spec:
+      hostname: rabbitmq
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.9.13-management
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              value: admin
+            - name: RABBITMQ_DEFAULT_PASS
+              value: 2072f871620fcb60e5b9f738197ef42d
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5672
+            - containerPort: 15672
+            - containerPort: 25672
+            - containerPort: 1883
+          volumeMounts:
+            - mountPath: /var/lib/rabbitmq
+              subPath: rabbitmq
+              name: data
+            - mountPath: /etc/rabbitmq/enabled_plugins
+              subPath: enabled_plugins
+              name: config
+      volumes:
+        - name: data
+          hostPath:
+            path: /data/rabbitmq
+            type: DirectoryOrCreate
+        - name: config
+          configMap:
+            name: config-rabbitmq
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  labels:
+    app: rabbitmq
+    service: rabbitmq
+  namespace: telegram
+spec:
+  ports:
+    - port: 5672
+      name: tcp-mq
+      targetPort: 5672
+    - port: 25672
+      name: tcp-distribution
+      targetPort: 25672
+    - port: 80
+      name: http
+      targetPort: 15672
+  selector:
+    app: rabbitmq
