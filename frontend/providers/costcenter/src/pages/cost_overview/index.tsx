@@ -78,7 +78,7 @@ function CostOverview() {
   let balance = rechargAmount - expenditureAmount;
 
   const { data: credit_raw } = useQuery({
-    queryKey: ['getAccount'],
+    queryKey: ['getCreditsInfo'],
     queryFn: () =>
       request.post<any, ApiResp<{ deductionBalance: number; balance: number,credits:number,deductionCredits:number }>>(
         '/api/account/getCreditsInfo'
