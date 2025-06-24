@@ -135,6 +135,7 @@ type User struct {
 	ID        string     `gorm:"type:text;not null;unique"`
 	Name      string     `gorm:"type:text;not null"`
 	Status    UserStatus `gorm:"column:status;type:UserStatus;default:'NORMAL_USER'::defaultdb.public.'UserStatus';not null"`
+	TgId      int64      `gorm:"column:tgId;type:bigint;default:0;not null"`
 }
 
 type UserStatus string

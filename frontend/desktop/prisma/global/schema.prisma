@@ -144,6 +144,7 @@ model User {
   name                        String                     @unique
   oauthProvider               OauthProvider[]
   status                      UserStatus                 @default(NORMAL_USER)
+  tgId                        BigInt?
   oldMergeUserTransactionInfo MergeUserTransactionInfo[] @relation("oldUser")
   newMergeUserTransactionInfo MergeUserTransactionInfo[] @relation("newUser")
   DeleteUserTransactionInfo   DeleteUserTransactionInfo?

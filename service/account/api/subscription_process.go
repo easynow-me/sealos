@@ -237,17 +237,34 @@ func (p *SubscriptionProcessor) HandlerSubscriptionTransaction(subscription *typ
 		//	}
 		//}
 
-		// todo 检查是否满足免费订阅续费条件
-
-		// 直接创建一个订阅交易记录，状态为 NoNeed
-		subTransaction.PayStatus = types.SubscriptionPayStatusNoNeed
-		err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
-			return tx.Create(&subTransaction).Error
-		})
+		// 检查是否满足免费订阅续费条件 是否绑定tg账号
+		// 检查 User 表中用户的 tgId 是否非 0
+		var tgId int64
+		err = p.db.Model(&types.User{}).Where("uid = ?", subscription.UserUID).Select("tgid").Scan(&tgId).Error
 		if err != nil {
-			return fmt.Errorf("failed to create subscription transaction: %w", err)
+			return fmt.Errorf("failed to get tgId for user %s: %w", subscription.UserUID, err)
 		}
-		return nil
+		if tgId != 0 {
+			// 直接创建一个订阅交易记录，状态为 NoNeed
+			subTransaction.PayStatus = types.SubscriptionPayStatusNoNeed
+			err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
+				return tx.Create(&subTransaction).Error
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create subscription transaction: %w", err)
+			}
+			return nil
+		} else {
+			// tgId 为 0，不满足免费订阅续费条件，设置为欠费
+			subscription.Status = types.SubscriptionStatusDebt
+			err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
+				return tx.Model(&types.Subscription{}).Where(&types.Subscription{ID: subscription.ID}).Update("status", types.SubscriptionStatusDebt).Error
+			})
+			if err != nil {
+				return fmt.Errorf("failed to update subscription status: %w", err)
+			}
+			return nil
+		}
 	}
 
 	//TODO card binding payment
