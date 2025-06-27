@@ -74,10 +74,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       id: string;
       name: string;
       realName?: string;
+      tgId?: string;
       enterpriseRealName?: string;
       userRestrictedLevel?: number;
     } = {
       ...globalData,
+      tgId: globalData.tgId ? globalData.tgId.toString() : '',
       oauthProvider: globalData.oauthProvider
         .filter((o) => {
           if (o.providerType === ProviderType.GOOGLE) {
