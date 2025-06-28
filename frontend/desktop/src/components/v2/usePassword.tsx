@@ -1,6 +1,6 @@
 import { passwordExistRequest, passwordLoginRequest, UserInfo } from '@/api/auth';
 import useSessionStore from '@/stores/session';
-import { Input, InputGroup, InputLeftElement, Text, Button, Stack, Flex, Box } from '@chakra-ui/react';
+import { Input, InputGroup, InputLeftElement, Text, Button, Stack } from '@chakra-ui/react';
 import { useTranslation } from 'next-i18next';
 import { useRouter } from 'next/router';
 import { useState } from 'react';
@@ -10,7 +10,7 @@ import { AccessTokenPayload } from '@/types/token';
 import { getBaiduId, getInviterId, getUserSemData, sessionConfig } from '@/utils/sessionConfig';
 import { I18nCommonKey } from '@/types/i18next';
 import { SemData } from '@/types/sem';
-import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 export default function usePassword({
   showError
@@ -19,18 +19,15 @@ export default function usePassword({
 }) {
   const { t } = useTranslation();
   const router = useRouter();
-  const [userExist, setUserExist] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
-  // 对于注册的用户，需要先验证密码 0 默认页面;1为验证密码页面
-  const [pageState, setPageState] = useState(0);
 
-  const setToken = useSessionStore((s) => s.setToken);
-  const setSession = useSessionStore((s) => s.setSession);
   const { register, handleSubmit, watch, trigger, getValues } = useForm<{
     username: string;
     password: string;
-    confimPassword: string;
   }>();
+
+  const setToken = useSessionStore((s) => s.setToken);
+  const setSession = useSessionStore((s) => s.setSession);
 
   const login = async () => {
     const deepSearch = (obj: any): I18nCommonKey => {
@@ -53,57 +50,21 @@ export default function usePassword({
             const result = await passwordExistRequest({ user: data.username });
 
             if (result?.code === 200) {
-              const result = await passwordLoginRequest({
+              // 用户存在，执行登录
+              const loginResult = await passwordLoginRequest({
                 user: data.username,
                 password: data.password,
                 inviterId,
                 semData,
                 bdVid
               });
-              if (!!result?.data) {
-                await sessionConfig(result.data);
+              if (!!loginResult?.data) {
+                await sessionConfig(loginResult.data);
                 await router.replace('/');
               }
-              return;
             } else if (result?.code === 201) {
-              setUserExist(!!result?.data?.exist);
-              setPageState(1);
-              if (!!data?.confimPassword) {
-                if (data?.password !== data?.confimPassword) {
-                  showError('password_mis_match');
-                } else {
-                  const regionResult = await passwordLoginRequest({
-                    user: data.username,
-                    password: data.password,
-                    inviterId,
-                    semData,
-                    bdVid
-                  });
-                  if (!!regionResult?.data) {
-                    setToken(regionResult.data.token);
-                    const infoData = await UserInfo();
-                    const payload = jwtDecode<AccessTokenPayload>(regionResult.data.token);
-                    setSession({
-                      token: regionResult.data.appToken, // fix cannot get appToken after login
-                      user: {
-                        k8s_username: payload.userCrName,
-                        name: infoData.data?.info.nickname || '',
-                        avatar: infoData.data?.info.avatarUri || '',
-                        nsid: payload.workspaceId,
-                        ns_uid: payload.workspaceUid,
-                        userCrUid: payload.userCrUid,
-                        userId: payload.userId,
-                        userUid: payload.userUid,
-                        realName: infoData.data?.info.realName || undefined,
-                        enterpriseRealName: infoData.data?.info.enterpriseRealName || undefined,
-                        userRestrictedLevel: infoData.data?.info.userRestrictedLevel || undefined
-                      },
-                      kubeconfig: regionResult.data.kubeconfig
-                    });
-                    await router.replace('/');
-                  }
-                }
-              }
+              // 用户不存在，显示错误信息
+              showError(t('common:invalid_username_or_password'));
             }
           } catch (error: any) {
             console.log(error);
@@ -121,11 +82,7 @@ export default function usePassword({
   };
 
   const PasswordComponent = () => {
-    if (pageState === 0) {
-      return <PasswordModal />;
-    } else {
-      return <ConfirmPasswordModal />;
-    }
+    return <PasswordModal />;
   };
 
   const PasswordModal = () => {
@@ -223,79 +180,9 @@ export default function usePassword({
     );
   };
 
-  const ConfirmPasswordModal = () => {
-    return (
-      <Stack spacing={'16px'}>
-        <Flex p={'0'} alignItems={'center'} width="full" minH="42px" mb="14px" borderRadius="4px">
-          <Box mr={'16px'}>
-            <ArrowLeft
-              color={'#71717A'}
-              size={'20px'}
-              cursor={'pointer'}
-              onClick={() => setPageState(0)}
-            />
-          </Box>
-          <Text color={'#71717A'}>{t('common:verify_password')}</Text>
-        </Flex>
-        <InputGroup>
-          <InputLeftElement color={'#71717A'} left={'12px'} h={'40px'}>
-            <Text
-              pl="10px"
-              pr="8px"
-              height={'20px'}
-              borderRight={'1px'}
-              fontSize={'14px'}
-              borderColor={'#E4E4E7'}
-            >
-              🔒
-            </Text>
-          </InputLeftElement>
-          <Input
-            type="password"
-            height="40px"
-            w="full"
-            fontSize={'14px'}
-            background="#FFFFFF"
-            border="1px solid #E4E4E7"
-            borderRadius="8px"
-            placeholder={t('common:verify_password') || 'Verify password'}
-            py="10px"
-            pr={'12px'}
-            pl={'60px'}
-            color={'#71717A'}
-            _autofill={{
-              backgroundColor: 'transparent !important',
-              backgroundImage: 'none !important'
-            }}
-            {...register('confimPassword', {
-              pattern: {
-                value: /^(?=.*\S).{8,}$/,
-                message: 'password tips'
-              },
-              required: true
-            })}
-          />
-        </InputGroup>
-        <Button
-          variant={'solid'}
-          px={'0'}
-          borderRadius={'8px'}
-          onClick={login}
-          isLoading={isLoading}
-          bgColor={'#0A0A0A'}
-          rightIcon={<ArrowRight size={'14px'} />}
-        >
-          {t('v2:sign_in')}
-        </Button>
-      </Stack>
-    );
-  };
-
   return {
     PasswordComponent,
     login,
-    userExist,
-    pageState,
     isLoading
   };
 } 

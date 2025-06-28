@@ -79,7 +79,6 @@ export default function SigninComponent() {
 
   const {
     PasswordComponent,
-    pageState,
     login: passwordSubmit,
     isLoading: passwordLoading
   } = usePassword({ showError });
