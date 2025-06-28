@@ -36,14 +36,14 @@ on:
         required: false
         type: string
   push:
-    branches: [ "main" ]
+    branches: ['main', 'istio']
     paths:
       - "deploy/cloud/**"
       - ".github/workflows/cloud.yml"
       - "!**/*.md"
       - "!**/*.yaml"
   pull_request:
-    branches: [ "*" ]
+    branches: ['*', 'istio']
     paths:
       - "deploy/cloud/**"
       - ".github/workflows/cloud.yml"

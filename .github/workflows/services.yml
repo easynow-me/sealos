@@ -29,14 +29,14 @@ on:
         required: false
         type: string
   push:
-    branches: [ "main" ]
+    branches: ['main', 'istio']
     paths:
       - "service/**"
       - ".github/workflows/services.yml"
       - "!**/*.md"
       - "!**/*.yaml"
   pull_request:
-    branches: [ "*" ]
+    branches: ['*', 'istio']
     paths:
       - "service/**"
       - ".github/workflows/services.yml"

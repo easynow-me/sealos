@@ -8,14 +8,14 @@ on:
         required: false
         type: boolean
   push:
-    branches: [ "main" ]
+    branches: ['main', 'istio']
     paths:
       - "webhooks/**"
       - ".github/workflows/webhooks.yml"
       - "!**/*.md"
       - "!**/*.yaml"
   pull_request:
-    branches: [ "*" ]
+    branches: ['*', 'istio']
     paths:
       - "webhooks/**"
       - ".github/workflows/webhooks.yml"

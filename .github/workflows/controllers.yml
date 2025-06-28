@@ -28,14 +28,14 @@ on:
         required: false
         type: string
   push:
-    branches: ['main']
+    branches: ['main', 'istio']
     paths:
       - 'controllers/**'
       - '.github/workflows/controllers.yml'
       - '!**/*.md'
       - '!**/*.yaml'
   pull_request:
-    branches: ['*']
+    branches: ['*', 'istio']
     paths:
       - 'controllers/**'
       - '.github/workflows/controllers.yml'
