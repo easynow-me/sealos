@@ -29,6 +29,8 @@ import Link from 'next/link';
 import { WechatIcon } from '@sealos/ui';
 import { z } from 'zod';
 import { gtmLoginStart } from '@/utils/gtm';
+import usePassword from './usePassword';
+import { I18nCommonKey } from '@/types/i18next';
 
 export default function SigninComponent() {
   const { t, i18n } = useTranslation();
@@ -40,6 +42,7 @@ export default function SigninComponent() {
   const router = useRouter();
   const needPhone = conf.authConfig?.idp.sms?.enabled && conf.authConfig.idp.sms.ali.enabled;
   const needEmail = conf.authConfig?.idp.email.enabled;
+  const needPassword = conf.authConfig?.idp.password?.enabled;
   const { setSignupData, signupData } = useSignupStore();
   const authConfig = conf.authConfig;
   const { generateState, setProvider, setToken, session, token } = useSessionStore();
@@ -62,6 +65,25 @@ export default function SigninComponent() {
       service_protocol: conf.layoutConfig?.protocol?.serviceProtocol.en as string,
       private_protocol: conf.layoutConfig?.protocol?.privateProtocol.en as string
     };
+
+  // 添加密码登录功能
+  const showError = (errorMessage: I18nCommonKey, duration?: number) => {
+    toast({
+      title: t(errorMessage),
+      status: 'error',
+      duration: duration || 3000,
+      isClosable: true,
+      position: 'top'
+    });
+  };
+
+  const {
+    PasswordComponent,
+    pageState,
+    login: passwordSubmit,
+    isLoading: passwordLoading
+  } = usePassword({ showError });
+
   const handleSocialLogin = async (provider: OauthProvider) => {
     gtmLoginStart();
     if (!authConfig) {
@@ -303,9 +325,36 @@ export default function SigninComponent() {
         ) : (
           <></>
         )}
+
+        {/* 密码登录组件 */}
+        {needPassword && (
+          <>
+            {((conf.layoutConfig?.version === 'cn' && needPhone) ||
+              conf.layoutConfig?.version === 'en' ||
+              needEmail) && (
+              <Flex gap={'10px'} alignItems={'center'}>
+                <Divider />
+                <Flex justify="center" align="center" bg="white">
+                  <Text color="#71717A" fontSize="12px" width={'max-content'}>
+                    {t('v2:or')}
+                  </Text>
+                </Flex>
+                <Divider />
+              </Flex>
+            )}
+            <PasswordComponent />
+          </>
+        )}
+
+        {/* 社交登录分隔线 */}
         {((conf.layoutConfig?.version === 'cn' && needPhone) ||
           conf.layoutConfig?.version === 'en' ||
-          needEmail) && (
+          needEmail ||
+          needPassword) && (
+          authConfig?.idp.wechat?.enabled ||
+          authConfig?.idp.github?.enabled ||
+          authConfig?.idp.google?.enabled
+        ) && (
           <Flex gap={'10px'} alignItems={'center'}>
             <Divider />
             <Flex justify="center" align="center" bg="white">
@@ -316,6 +365,7 @@ export default function SigninComponent() {
             <Divider />
           </Flex>
         )}
+
         <Stack spacing={'16px'}>
           {authConfig?.idp.wechat?.enabled && (
             <Button
