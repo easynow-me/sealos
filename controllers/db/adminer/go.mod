@@ -1,12 +1,10 @@
 module github.com/labring/sealos/controllers/db/adminer
 
-go 1.21
+go 1.24.0
 
 require (
 	github.com/go-logr/logr v1.4.1
-	github.com/labring/sealos/controllers/common v0.0.0
 	github.com/labring/sealos/controllers/pkg v0.0.0
-	github.com/labring/sealos/controllers/user/api v0.0.0
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	k8s.io/api v0.29.2
 	k8s.io/apimachinery v0.29.2
@@ -68,10 +66,4 @@ require (
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
-)
-
-replace (
-	github.com/labring/sealos/controllers/common => ../pkg/common
-	github.com/labring/sealos/controllers/pkg => ../../pkg
-	github.com/labring/sealos/controllers/user/api => ../user/api
 )
