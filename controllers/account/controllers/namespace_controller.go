@@ -186,7 +186,7 @@ func (r *NamespaceReconciler) SuspendUserResource(ctx context.Context, namespace
 func (r *NamespaceReconciler) DeleteUserResource(_ context.Context, namespace string) error {
 	deleteResources := []string{
 		"backup", "cluster.apps.kubeblocks.io", "backupschedules", "devboxes", "devboxreleases", "cronjob",
-		"objectstorageuser", "deploy", "sts", "pvc", "Service", "Ingress",
+		"objectstorageuser", "deploy", "sts", "pvc", "Service", "Ingress", "VirtualService",
 		"Issuer", "Certificate", "HorizontalPodAutoscaler", "instance",
 		"job", "app",
 	}
@@ -620,6 +620,8 @@ func deleteResource(dynamicClient dynamic.Interface, resource, namespace string)
 		gvr = schema.GroupVersionResource{Group: "devbox.sealos.io", Version: "v1alpha1", Resource: "devboxes"}
 	case "devboxreleases":
 		gvr = schema.GroupVersionResource{Group: "devbox.sealos.io", Version: "v1alpha1", Resource: "devboxreleases"}
+	case "VirtualService":
+		gvr = schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1beta1", Resource: "virtualservices"}
 	default:
 		return fmt.Errorf("unknown resource: %s", resource)
 	}

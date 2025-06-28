@@ -25,10 +25,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -159,6 +160,31 @@ func (r *NetworkReconciler) handleResource(ctx context.Context, key client.Objec
 		return fmt.Errorf("failed to get ingress %s: %w", key.Name, err)
 	}
 
+	// Try fetching as VirtualService
+	virtualService := &unstructured.Unstructured{}
+	virtualService.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.istio.io",
+		Version: "v1beta1",
+		Kind:    "VirtualService",
+	})
+	if err := r.Client.Get(ctx, key, virtualService); err == nil {
+		annotations := virtualService.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+		if annotations[IngressClassKey] != Disable {
+			annotations[IngressClassKey] = Disable
+			virtualService.SetAnnotations(annotations)
+			if err := r.Client.Update(ctx, virtualService); err != nil {
+				return fmt.Errorf("failed to suspend virtualservice %s: %w", key.Name, err)
+			}
+			r.Log.V(1).Info("Suspended virtualservice", "name", key.Name)
+		}
+		return nil
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get virtualservice %s: %w", key.Name, err)
+	}
+
 	// Try fetching as Service
 	svc := corev1.Service{}
 	if err := r.Client.Get(ctx, key, &svc); err == nil {
@@ -197,6 +223,31 @@ func (r *NetworkReconciler) suspendNetworkResources(ctx context.Context, namespa
 				return fmt.Errorf("failed to suspend ingress %s: %w", ingress.Name, err)
 			}
 			r.Log.V(1).Info("Suspended ingress", "name", ingress.Name)
+		}
+	}
+
+	// Suspend VirtualServices
+	virtualServiceList := &unstructured.UnstructuredList{}
+	virtualServiceList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.istio.io",
+		Version: "v1beta1",
+		Kind:    "VirtualServiceList",
+	})
+	if err := r.Client.List(ctx, virtualServiceList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list virtualservices in namespace %s: %w", namespace, err)
+	}
+	for _, vs := range virtualServiceList.Items {
+		annotations := vs.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+		if annotations[IngressClassKey] != Disable {
+			annotations[IngressClassKey] = Disable
+			vs.SetAnnotations(annotations)
+			if err := r.Client.Update(ctx, &vs); err != nil {
+				return fmt.Errorf("failed to suspend virtualservice %s: %w", vs.GetName(), err)
+			}
+			r.Log.V(1).Info("Suspended virtualservice", "name", vs.GetName())
 		}
 	}
 
@@ -240,6 +291,29 @@ func (r *NetworkReconciler) resumeNetworkResources(ctx context.Context, namespac
 		r.Log.V(1).Info("Resumed ingress", "name", ingress.Name)
 	}
 
+	// Resume VirtualServices
+	virtualServiceList := &unstructured.UnstructuredList{}
+	virtualServiceList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.istio.io",
+		Version: "v1beta1",
+		Kind:    "VirtualServiceList",
+	})
+	if err := r.Client.List(ctx, virtualServiceList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list virtualservices in namespace %s: %w", namespace, err)
+	}
+	for _, vs := range virtualServiceList.Items {
+		annotations := vs.GetAnnotations()
+		if annotations == nil || annotations[IngressClassKey] != Disable {
+			continue
+		}
+		annotations[IngressClassKey] = "istio"
+		vs.SetAnnotations(annotations)
+		if err := r.Client.Update(ctx, &vs); err != nil {
+			return fmt.Errorf("failed to resume virtualservice %s: %w", vs.GetName(), err)
+		}
+		r.Log.V(1).Info("Resumed virtualservice", "name", vs.GetName())
+	}
+
 	// Resume NodePort Services
 	serviceList := corev1.ServiceList{}
 	if err := r.Client.List(ctx, &serviceList, client.InNamespace(namespace)); err != nil {
@@ -250,7 +324,6 @@ func (r *NetworkReconciler) resumeNetworkResources(ctx context.Context, namespac
 			continue
 		}
 		svc.Spec.Type = corev1.ServiceTypeNodePort
-		delete(svc.Labels, NodePortLabelKey)
 		if err := r.Client.Update(ctx, &svc); err != nil {
 			return fmt.Errorf("failed to resume service %s: %w", svc.Name, err)
 		}
@@ -356,55 +429,9 @@ func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	suspendedHandler := &SuspendedNamespaceHandler{Client: r.Client, Logger: r.Log}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Namespace{}, builder.WithPredicates(NetworkAnnotationPredicate{})).
-		Watches(
-			&networkingv1.Ingress{},
-			suspendedHandler,
-			builder.WithPredicates(predicate.Funcs{
-				CreateFunc: func(e event.CreateEvent) bool {
-					return true
-				},
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					newIngress, ok := e.ObjectNew.(*networkingv1.Ingress)
-					if !ok {
-						return false
-					}
-					return newIngress.Annotations != nil && newIngress.Annotations[IngressClassKey] != Disable
-				},
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					return false
-				},
-				GenericFunc: func(e event.GenericEvent) bool {
-					return false
-				},
-			}),
-		).
-		Watches(
-			&corev1.Service{},
-			suspendedHandler,
-			builder.WithPredicates(predicate.Funcs{
-				CreateFunc: func(e event.CreateEvent) bool {
-					svc, ok := e.Object.(*corev1.Service)
-					if !ok {
-						return false
-					}
-					return svc.Spec.Type == corev1.ServiceTypeNodePort
-				},
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					newSvc, ok := e.ObjectNew.(*corev1.Service)
-					if !ok {
-						return false
-					}
-					return newSvc.Spec.Type == corev1.ServiceTypeNodePort && (newSvc.Labels == nil || newSvc.Labels[NodePortLabelKey] != True)
-				},
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					return false
-				},
-				GenericFunc: func(e event.GenericEvent) bool {
-					return false
-				},
-			}),
-		).
+		For(&corev1.Namespace{}).
+		Owns(&networkingv1.Ingress{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
 }
 

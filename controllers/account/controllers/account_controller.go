@@ -56,8 +56,12 @@ import (
 	"github.com/labring/sealos/controllers/pkg/utils/retry"
 	userv1 "github.com/labring/sealos/controllers/user/api/v1"
 
+	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -544,4 +548,57 @@ func (r *AccountReconciler) BillingCVM() error {
 
 func init() {
 	SubscriptionEnabled = os.Getenv(EnvSubscriptionEnabled) == trueStatus
+}
+
+func (r *AccountReconciler) deleteResource(ctx context.Context, obj client.Object) error {
+	// Try to delete the resource
+	if err := r.Client.Delete(ctx, obj); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func (r *AccountReconciler) deleteResources(ctx context.Context, account *accountv1.Account) error {
+	// Delete Ingresses
+	ingressList := networkingv1.IngressList{}
+	if err := r.Client.List(ctx, &ingressList, client.InNamespace(account.Namespace)); err != nil {
+		return fmt.Errorf("failed to list ingresses: %w", err)
+	}
+	for _, ingress := range ingressList.Items {
+		if err := r.deleteResource(ctx, &ingress); err != nil {
+			return fmt.Errorf("failed to delete ingress %s: %w", ingress.Name, err)
+		}
+	}
+
+	// Delete VirtualServices
+	virtualServiceList := &unstructured.UnstructuredList{}
+	virtualServiceList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.istio.io",
+		Version: "v1beta1",
+		Kind:    "VirtualServiceList",
+	})
+	if err := r.Client.List(ctx, virtualServiceList, client.InNamespace(account.Namespace)); err != nil {
+		return fmt.Errorf("failed to list virtualservices: %w", err)
+	}
+	for _, vs := range virtualServiceList.Items {
+		if err := r.deleteResource(ctx, &vs); err != nil {
+			return fmt.Errorf("failed to delete virtualservice %s: %w", vs.GetName(), err)
+		}
+	}
+
+	// Delete Services
+	serviceList := corev1.ServiceList{}
+	if err := r.Client.List(ctx, &serviceList, client.InNamespace(account.Namespace)); err != nil {
+		return fmt.Errorf("failed to list services: %w", err)
+	}
+	for _, service := range serviceList.Items {
+		if err := r.deleteResource(ctx, &service); err != nil {
+			return fmt.Errorf("failed to delete service %s: %w", service.Name, err)
+		}
+	}
+
+	return nil
 }

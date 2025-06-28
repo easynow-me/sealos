@@ -422,6 +422,8 @@ func (r *AdminerReconciler) syncIngress(ctx context.Context, adminer *adminerv1.
 	switch adminer.Spec.IngressType {
 	case adminerv1.Nginx:
 		err = r.syncNginxIngress(ctx, adminer, host, recLabels)
+	case adminerv1.Istio:
+		err = r.syncIstioVirtualService(ctx, adminer, host, recLabels)
 	}
 	return err
 }
