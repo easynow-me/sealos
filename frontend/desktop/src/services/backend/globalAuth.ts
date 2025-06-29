@@ -417,7 +417,7 @@ export const getGlobalToken = async ({
       return null;
     }
     if (!_user) {
-      if (!enableSignUp()) throw new Error('Failed to signUp user');
+      if (!enableSignUp()) return null;
       const result = await signUpByPassword({
         id: providerId,
         name,
@@ -453,7 +453,7 @@ export const getGlobalToken = async ({
   } else {
     if (!_user) {
       // sign up
-      if (!enableSignUp()) throw new Error('Failed to signUp user');
+      if (!enableSignUp()) return null;
       let signUpResult;
       if (forceBindEmail(provider)) {
         // check email
