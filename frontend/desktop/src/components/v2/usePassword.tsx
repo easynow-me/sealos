@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { jwtDecode } from 'jwt-decode';
 import { AccessTokenPayload } from '@/types/token';
-import { getBaiduId, getInviterId, getUserSemData, sessionConfig } from '@/utils/sessionConfig';
+import { getAdClickData, getInviterId, getUserSemData, sessionConfig } from '@/utils/sessionConfig';
 import { I18nCommonKey } from '@/types/i18next';
 import { SemData } from '@/types/sem';
 import { ArrowRight } from 'lucide-react';
@@ -44,7 +44,7 @@ export default function usePassword({
           try {
             setIsLoading(true);
             const inviterId = getInviterId();
-            const bdVid = getBaiduId();
+            const adClickData = getAdClickData();
             const semData: SemData | null = getUserSemData();
 
             const result = await passwordExistRequest({ user: data.username });
@@ -56,7 +56,7 @@ export default function usePassword({
                 password: data.password,
                 inviterId,
                 semData,
-                bdVid
+                adClickData
               });
               if (!!loginResult?.data) {
                 await sessionConfig(loginResult.data);
