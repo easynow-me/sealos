@@ -467,6 +467,30 @@ func setDefaultTimeRange(timeRange *TimeRange) {
 	}
 }
 
+func ParseCreateUserReq(c *gin.Context) (*CreateUserReq, error) {
+	createUserReq := &CreateUserReq{}
+	if err := c.ShouldBindJSON(createUserReq); err != nil {
+		return nil, fmt.Errorf("bind json error: %v", err)
+	}
+	// Generate user ID if not provided
+	if createUserReq.UserID == "" {
+		createUserReq.UserID = fmt.Sprintf("user-%s", uuid.New().String())
+	}
+	return createUserReq, nil
+}
+
+func ParseGetUserTokenReq(c *gin.Context) (*GetUserTokenReq, error) {
+	getUserTokenReq := &GetUserTokenReq{}
+	if err := c.ShouldBindJSON(getUserTokenReq); err != nil {
+		return nil, fmt.Errorf("bind json error: %v", err)
+	}
+	// Validate that at least username or userUID is provided
+	if getUserTokenReq.Username == "" && getUserTokenReq.UserUID == "" {
+		return nil, fmt.Errorf("either username or userUID must be provided")
+	}
+	return getUserTokenReq, nil
+}
+
 type CostOverviewResp struct {
 	// @Summary Cost overview
 	// @Description Cost overview
@@ -494,6 +518,92 @@ type CostOverview struct {
 	// @Description App type
 	AppType uint8  `json:"appType" bson:"appType"`
 	AppName string `json:"appName" bson:"appName"`
+}
+
+type CreateUserReq struct {
+	// @Summary Username
+	// @Description Username for the new user
+	// @JSONSchema required
+	Username string `json:"username" bson:"username" binding:"required" example:"testuser"`
+
+	// @Summary User ID
+	// @Description Unique user ID (optional, will be generated if not provided)
+	UserID string `json:"userID,omitempty" bson:"userID" example:"user-123"`
+
+	// @Summary Initial balance
+	// @Description Initial account balance (optional, default is 0)
+	InitialBalance int64 `json:"initialBalance,omitempty" bson:"initialBalance" example:"1000000000"`
+
+	// @Summary Authentication information
+	// @Description Authentication information
+	// @JSONSchema required
+	AuthBase `json:",inline" bson:",inline"`
+}
+
+type CreateUserResp struct {
+	// @Summary User ID
+	// @Description The unique ID of the created user
+	UserID string `json:"userID" bson:"userID" example:"user-123"`
+
+	// @Summary Username
+	// @Description The username of the created user
+	Username string `json:"username" bson:"username" example:"testuser"`
+
+	// @Summary Account balance
+	// @Description The initial account balance
+	Balance int64 `json:"balance" bson:"balance" example:"1000000000"`
+
+	// @Summary Created at
+	// @Description The timestamp when the user was created
+	CreatedAt time.Time `json:"createdAt" bson:"createdAt"`
+
+	// @Summary Message
+	// @Description Response message
+	Message string `json:"message" bson:"message" example:"User created successfully"`
+}
+
+type GetUserTokenReq struct {
+	// @Summary Username or User ID
+	// @Description Username or User ID to get token for
+	// @JSONSchema required
+	Username string `json:"username,omitempty" bson:"username" example:"testuser"`
+	
+	// @Summary User UID
+	// @Description User UID to get token for (optional, username takes precedence)
+	UserUID string `json:"userUID,omitempty" bson:"userUID" example:"550e8400-e29b-41d4-a716-446655440000"`
+
+	// @Summary Workspace ID
+	// @Description Workspace ID for the token (optional)
+	WorkspaceID string `json:"workspaceId,omitempty" bson:"workspaceId" example:"workspace-123"`
+
+	// @Summary Authentication information
+	// @Description Authentication information
+	// @JSONSchema required
+	AuthBase `json:",inline" bson:",inline"`
+}
+
+type GetUserTokenResp struct {
+	// @Summary JWT Token
+	// @Description The JWT token for the specified user
+	Token string `json:"token" bson:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+
+	// @Summary User information
+	// @Description Basic user information included in the token
+	User struct {
+		UserID       string `json:"userId" bson:"userId" example:"user-123"`
+		UserUID      string `json:"userUid" bson:"userUid" example:"550e8400-e29b-41d4-a716-446655440000"`
+		Username     string `json:"username" bson:"username" example:"testuser"`
+		WorkspaceID  string `json:"workspaceId,omitempty" bson:"workspaceId" example:"workspace-123"`
+		WorkspaceUID string `json:"workspaceUid,omitempty" bson:"workspaceUid" example:"660e8400-e29b-41d4-a716-446655440000"`
+	} `json:"user" bson:"user"`
+
+	// @Summary Expiration
+	// @Description Token expiration time
+	ExpiresAt time.Time `json:"expiresAt" bson:"expiresAt"`
+
+	// @Summary Message
+	// @Description Response message
+	Message string `json:"message" bson:"message" example:"Token generated successfully"`
 }
 
 type CostAppListResp struct {

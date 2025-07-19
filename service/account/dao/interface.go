@@ -92,6 +92,9 @@ type Interface interface {
 	SetDefaultCard(cardID uuid.UUID, userUID uuid.UUID) error
 	GlobalTransactionHandler(funcs ...func(tx *gorm.DB) error) error
 	GetSubscriptionPlan(planName string) (*types.SubscriptionPlan, error)
+	CreateUser(user *types.User, account *types.Account, workspace *types.Workspace, userWorkspace *types.UserWorkspace) error
+	GetUser(ops *types.UserQueryOpts) (*types.User, error)
+	GetWorkspace(names ...string) ([]types.Workspace, error)
 }
 
 type Account struct {
@@ -2331,4 +2334,41 @@ func (m *MongoDB) reconcileUnsettledLLMBilling(startTime, endTime time.Time) (ma
 		return nil, fmt.Errorf("cursor error: %v", err)
 	}
 	return result, nil
+}
+
+// CreateUser creates a new user with account, workspace and relationships
+func (a *Account) CreateUser(user *types.User, account *types.Account, workspace *types.Workspace, userWorkspace *types.UserWorkspace) error {
+	return a.ck.GlobalTransactionHandler(func(tx *gorm.DB) error {
+		// Create user
+		if err := tx.Create(user).Error; err != nil {
+			return fmt.Errorf("failed to create user: %w", err)
+		}
+
+		// Create account
+		if err := tx.Create(account).Error; err != nil {
+			return fmt.Errorf("failed to create account: %w", err)
+		}
+
+		// Create workspace
+		if err := tx.Create(workspace).Error; err != nil {
+			return fmt.Errorf("failed to create workspace: %w", err)
+		}
+
+		// Create user-workspace relationship
+		if err := tx.Create(userWorkspace).Error; err != nil {
+			return fmt.Errorf("failed to create user-workspace relationship: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// GetUser gets user information
+func (a *Account) GetUser(ops *types.UserQueryOpts) (*types.User, error) {
+	return a.ck.GetUser(ops)
+}
+
+// GetWorkspace gets workspace information
+func (a *Account) GetWorkspace(names ...string) ([]types.Workspace, error) {
+	return a.ck.GetWorkspace(names...)
 }

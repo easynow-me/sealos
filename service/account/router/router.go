@@ -80,7 +80,9 @@ func RegisterPayRouter() {
 		POST(helper.AdminChargeBilling, api.AdminChargeBilling).
 		POST(helper.AdminFlushDebtResourceStatus, api.AdminFlushDebtResourceStatus).
 		POST(helper.AdminSuspendUserTraffic, api.AdminSuspendUserTraffic).
-		POST(helper.AdminResumeUserTraffic, api.AdminResumeUserTraffic)
+		POST(helper.AdminResumeUserTraffic, api.AdminResumeUserTraffic).
+		POST(helper.AdminCreateUser, api.AdminCreateUser).
+		POST(helper.AdminGetUserToken, api.AdminGetUserToken)
 	paymentGroup := router.Group(helper.PaymentGroup).
 		POST(helper.CreatePay, api.CreateCardPay).
 		POST(helper.Notify, api.NewPayNotifyHandler).
