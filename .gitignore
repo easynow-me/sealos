@@ -25,3 +25,5 @@ deploy/cloud/tars
 /lifecycle/tools/
 
 **.env*
+
+kube/

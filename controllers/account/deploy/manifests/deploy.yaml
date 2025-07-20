@@ -703,6 +703,53 @@ metadata:
   namespace: account-system
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: suspension-config
+  namespace: account-system
+  labels:
+    app.kubernetes.io/name: namespace-controller
+    app.kubernetes.io/component: config
+data:
+  config.yaml: |
+    resources:
+      certificates:
+        gvr: "cert-manager.io/v1/Certificate"
+        strategy: "mark_suspended"
+        backup_required: false
+        backup_size_limit: ""
+      challenges:
+        gvr: "acme.cert-manager.io/v1/Challenge"
+        strategy: "delete"
+        backup_required: false
+        backup_size_limit: ""
+      ingresses:
+        gvr: "networking.k8s.io/v1/Ingress"
+        strategy: "backup_and_clear"
+        backup_required: true
+        backup_size_limit: "200KB"
+      services:
+        gvr: "v1/Service"
+        strategy: "backup_and_clear"
+        backup_required: true
+        backup_size_limit: "200KB"
+      gateways:
+        gvr: "networking.istio.io/v1beta1/Gateway"
+        strategy: "backup_and_clear"
+        backup_required: true
+        backup_size_limit: "200KB"
+      virtualservices:
+        gvr: "networking.istio.io/v1beta1/VirtualService"
+        strategy: "backup_and_clear"
+        backup_required: true
+        backup_size_limit: "200KB"
+      destinationrules:
+        gvr: "networking.istio.io/v1beta1/DestinationRule"
+        strategy: "backup_and_clear"
+        backup_required: true
+        backup_size_limit: "200KB"
+---
+apiVersion: v1
 kind: Service
 metadata:
   labels:

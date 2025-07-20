@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -64,10 +63,12 @@ func (m *VirtualServiceMutator) SetupWithManager(mgr ctrl.Manager) error {
 		Kind:    "VirtualService",
 	})
 	
-	return builder.WebhookManagedBy(mgr).
-		For(virtualServiceType).
-		WithDefaulter(m).
-		Complete()
+	// 手动注册webhook以避免controller-runtime v0.13.0的unstructured类型转换检查问题
+	mgr.GetWebhookServer().Register(
+		"/mutate-networking-istio-io-v1beta1-virtualservice",
+		admission.WithCustomDefaulter(virtualServiceType, m),
+	)
+	return nil
 }
 
 func (m *VirtualServiceMutator) Default(_ context.Context, obj runtime.Object) error {
@@ -160,10 +161,12 @@ func (v *VirtualServiceValidator) SetupWithManager(mgr ctrl.Manager) error {
 		return err
 	}
 
-	return builder.WebhookManagedBy(mgr).
-		For(virtualServiceType).
-		WithValidator(v).
-		Complete()
+	// 手动注册webhook以避免controller-runtime v0.13.0的unstructured类型转换检查问题
+	mgr.GetWebhookServer().Register(
+		"/validate-networking-istio-io-v1beta1-virtualservice",
+		admission.WithCustomValidator(virtualServiceType, v),
+	)
+	return nil
 }
 
 //+kubebuilder:webhook:path=/validate-networking-istio-io-v1beta1-virtualservice,mutating=false,failurePolicy=ignore,sideEffects=None,groups=networking.istio.io,resources=virtualservices,verbs=create;update;delete,versions=v1beta1,name=vvirtualservice.sealos.io,admissionReviewVersions=v1

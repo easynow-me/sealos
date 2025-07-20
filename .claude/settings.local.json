@@ -20,7 +20,17 @@
       "Bash(kubectl rollout restart:*)",
       "Bash(kubectl rollout status:*)",
       "Bash(kubectl -n kube-system exec ds/cilium -- cilium status --brief)",
-      "Bash(pnpm build:*)"
+      "Bash(pnpm build:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(rm:*)",
+      "Bash(git add:*)",
+      "Bash(cat:*)",
+      "Bash(golangci-lint run:*)",
+      "Bash(go vet:*)",
+      "Bash(go mod:*)",
+      "Bash(go doc:*)"
     ],
     "deny": []
   }
