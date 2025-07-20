@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import * as echarts from 'echarts';
+import type * as echarts from 'echarts';
 import { useGlobalStore } from '@/store/global';
 import dayjs from 'dayjs';
 import { LineStyleMap } from '@/constants/monitor';
@@ -193,14 +193,20 @@ const MonitorChart = ({
   useEffect(() => {
     if (!chartDom.current) return;
 
-    if (!myChart.current) {
-      myChart.current = echarts.init(chartDom.current);
-    } else {
-      myChart.current.dispose();
-      myChart.current = echarts.init(chartDom.current);
-    }
+    const initChart = async () => {
+      const echarts = await import('echarts');
+      
+      if (!myChart.current) {
+        myChart.current = echarts.init(chartDom.current);
+      } else {
+        myChart.current.dispose();
+        myChart.current = echarts.init(chartDom.current);
+      }
 
-    myChart.current.setOption(option);
+      myChart.current.setOption(option);
+    };
+
+    initChart();
   }, [data, option]);
 
   useEffect(() => {

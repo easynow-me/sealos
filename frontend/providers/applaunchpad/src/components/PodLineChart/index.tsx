@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import * as echarts from 'echarts';
+import type * as echarts from 'echarts';
 import { useGlobalStore } from '@/store/global';
 import { MonitorDataResult } from '@/types/monitor';
 import dayjs from 'dayjs';
@@ -192,8 +192,14 @@ const PodLineChart = ({
   // init chart
   useEffect(() => {
     if (!Dom.current || myChart?.current?.getOption()) return;
-    myChart.current = echarts.init(Dom.current);
-    myChart.current && myChart.current.setOption(option.current);
+    
+    const initChart = async () => {
+      const echarts = await import('echarts');
+      myChart.current = echarts.init(Dom.current);
+      myChart.current && myChart.current.setOption(option.current);
+    };
+    
+    initChart();
   }, [Dom]);
 
   // data changed, update

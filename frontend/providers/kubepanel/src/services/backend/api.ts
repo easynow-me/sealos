@@ -78,5 +78,17 @@ const ApiBaseParamsRecord: Record<KubeObjectKind, KubeApiUrlParams> = {
     apiPrefix: 'api',
     apiVersion: 'v1',
     resource: 'services'
+  },
+  [KubeObjectKind.Gateway]: {
+    apiPrefix: 'apis',
+    apiGroup: 'networking.istio.io',
+    apiVersion: 'v1beta1',
+    resource: 'gateways'
+  },
+  [KubeObjectKind.VirtualService]: {
+    apiPrefix: 'apis',
+    apiGroup: 'networking.istio.io',
+    apiVersion: 'v1beta1',
+    resource: 'virtualservices'
   }
 };

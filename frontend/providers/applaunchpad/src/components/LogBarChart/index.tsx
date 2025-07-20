@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import * as echarts from 'echarts';
+import type * as echarts from 'echarts';
 import React, { useEffect, useMemo, useRef } from 'react';
 
 import { useGlobalStore } from '@/store/global';
@@ -188,8 +188,14 @@ const LogBarChart = ({
   // init chart
   useEffect(() => {
     if (!Dom.current || myChart?.current?.getOption() || !visible) return;
-    myChart.current = echarts.init(Dom.current);
-    myChart.current && myChart.current.setOption(option.current);
+    
+    const initChart = async () => {
+      const echarts = await import('echarts');
+      myChart.current = echarts.init(Dom.current);
+      myChart.current && myChart.current.setOption(option.current);
+    };
+    
+    initChart();
   }, [Dom, visible]);
 
   // data changed, update

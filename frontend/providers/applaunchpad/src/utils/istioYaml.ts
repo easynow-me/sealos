@@ -376,7 +376,7 @@ export const convertIngressToIstio = (ingressYaml: string): string => {
     const istioResources: any[] = [];
 
     for (const doc of docs) {
-      if (doc && typeof doc === 'object' && doc.kind === 'Ingress') {
+      if (doc && typeof doc === 'object' && (doc as any).kind === 'Ingress') {
         const ingress = doc as any;
         
         // Extract basic information
