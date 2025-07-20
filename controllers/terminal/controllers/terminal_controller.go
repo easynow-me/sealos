@@ -75,10 +75,12 @@ const (
 // TerminalReconciler reconciles a Terminal object
 type TerminalReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	recorder  record.EventRecorder
-	Config    *rest.Config
-	CtrConfig *Config
+	Scheme           *runtime.Scheme
+	recorder         record.EventRecorder
+	Config           *rest.Config
+	CtrConfig        *Config
+	istioReconciler  *IstioNetworkingReconciler
+	useIstio         bool
 }
 
 //+kubebuilder:rbac:groups=terminal.sealos.io,resources=terminals,verbs=get;list;watch;create;update;patch;delete
@@ -88,6 +90,9 @@ type TerminalReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch;create;update;patch;delete
 
 func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx, "terminal", req.NamespacedName)
@@ -159,15 +164,25 @@ func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	if err := r.syncIngress(ctx, terminal, hostname, recLabels); err != nil {
-		logger.Error(err, "create ingress failed")
-		r.recorder.Eventf(terminal, corev1.EventTypeWarning, "Create ingress failed", "%v", err)
+	if err := r.syncNetworking(ctx, terminal, hostname, recLabels); err != nil {
+		logger.Error(err, "create networking failed")
+		r.recorder.Eventf(terminal, corev1.EventTypeWarning, "Create networking failed", "%v", err)
 		return ctrl.Result{}, err
 	}
 
 	r.recorder.Eventf(terminal, corev1.EventTypeNormal, "Created", "create terminal success: %v", terminal.Name)
 	duration, _ := time.ParseDuration(terminal.Spec.Keepalived)
 	return ctrl.Result{RequeueAfter: duration}, nil
+}
+
+func (r *TerminalReconciler) syncNetworking(ctx context.Context, terminal *terminalv1.Terminal, hostname string, recLabels map[string]string) error {
+	// 根据配置决定使用 Istio 还是 Ingress
+	if r.useIstio && r.istioReconciler != nil {
+		return r.syncIstioNetworking(ctx, terminal, hostname, recLabels)
+	}
+	
+	// 回退到原有的 Ingress 模式
+	return r.syncIngress(ctx, terminal, hostname, recLabels)
 }
 
 func (r *TerminalReconciler) syncIngress(ctx context.Context, terminal *terminalv1.Terminal, hostname string, recLabels map[string]string) error {
@@ -178,6 +193,23 @@ func (r *TerminalReconciler) syncIngress(ctx context.Context, terminal *terminal
 		err = r.syncNginxIngress(ctx, terminal, host, recLabels)
 	}
 	return err
+}
+
+func (r *TerminalReconciler) syncIstioNetworking(ctx context.Context, terminal *terminalv1.Terminal, hostname string, recLabels map[string]string) error {
+	// 使用 Istio 网络配置
+	if err := r.istioReconciler.SyncIstioNetworking(ctx, terminal, hostname); err != nil {
+		return err
+	}
+	
+	// 更新 Terminal 状态中的域名
+	host := hostname + "." + r.CtrConfig.Global.CloudDomain
+	domain := Protocol + host + r.getPort()
+	if terminal.Status.Domain != domain {
+		terminal.Status.Domain = domain
+		return r.Status().Update(ctx, terminal)
+	}
+	
+	return nil
 }
 
 func (r *TerminalReconciler) syncNginxIngress(ctx context.Context, terminal *terminalv1.Terminal, host string, recLabels map[string]string) error {

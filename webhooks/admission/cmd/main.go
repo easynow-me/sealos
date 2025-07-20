@@ -53,6 +53,8 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var ingressAnnotationString string
+	var virtualServiceAnnotationString string
+	var enableIstioWebhooks bool
 	var domains v1.DomainList
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -60,6 +62,8 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&ingressAnnotationString, "ingress-mutating-annotations", "", "Ingress annotations: 'key1=value1,key2=value2'")
+	flag.StringVar(&virtualServiceAnnotationString, "virtualservice-mutating-annotations", "", "VirtualService annotations: 'key1=value1,key2=value2'")
+	flag.BoolVar(&enableIstioWebhooks, "enable-istio-webhooks", v1.IsIstioWebhooksEnabled(), "Enable Istio VirtualService webhooks")
 	flag.Var(&domains, "domains", "Domains to be used for check ingress cname")
 	opts := zap.Options{
 		Development: true,
@@ -76,6 +80,9 @@ func main() {
 
 	setupLog.Info("domains:", "domains", strings.Join(domains, ","))
 	setupLog.Info("ingress annotations:", "annotation", ingressAnnotationString)
+	setupLog.Info("virtualservice annotations:", "annotation", virtualServiceAnnotationString)
+	setupLog.Info("enable istio webhooks:", "enabled", enableIstioWebhooks)
+	
 	ingressAnnotations := make(map[string]string)
 	if ingressAnnotationString != "" {
 		kvs := strings.Split(ingressAnnotationString, ",")
@@ -90,6 +97,25 @@ func main() {
 				os.Exit(1)
 			}
 		}
+	}
+
+	virtualServiceAnnotations := make(map[string]string)
+	if virtualServiceAnnotationString != "" {
+		kvs := strings.Split(virtualServiceAnnotationString, ",")
+		for _, kv := range kvs {
+			parts := strings.Split(kv, "=")
+			if len(parts) == 2 {
+				key := parts[0]
+				value := parts[1]
+				virtualServiceAnnotations[key] = value
+			} else {
+				setupLog.Error(nil, "virtualservice annotation format error", "annotation", kv)
+				os.Exit(1)
+			}
+		}
+	} else {
+		// 如果命令行参数为空，尝试从环境变量获取
+		virtualServiceAnnotations = v1.GetVirtualServiceAnnotations()
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -139,6 +165,28 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to create namespace webhook")
 		os.Exit(1)
+	}
+
+	// 注册 VirtualService webhooks（如果启用）
+	if enableIstioWebhooks {
+		setupLog.Info("Setting up Istio VirtualService webhooks")
+		
+		if (&v1.VirtualServiceValidator{
+			Domains: domains,
+		}).SetupWithManager(mgr) != nil {
+			setupLog.Error(err, "unable to create virtualservice validator webhook")
+			os.Exit(1)
+		}
+
+		if (&v1.VirtualServiceMutator{
+			VsAnnotations: virtualServiceAnnotations,
+			Domains:       domains,
+		}).SetupWithManager(mgr) != nil {
+			setupLog.Error(err, "unable to create virtualservice mutator webhook")
+			os.Exit(1)
+		}
+		
+		setupLog.Info("Istio VirtualService webhooks setup completed")
 	}
 
 	//+kubebuilder:scaffold:builder

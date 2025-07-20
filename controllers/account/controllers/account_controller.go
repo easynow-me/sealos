@@ -57,6 +57,7 @@ import (
 	userv1 "github.com/labring/sealos/controllers/user/api/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -334,6 +335,12 @@ func (r *AccountReconciler) syncResourceQuotaAndLimitRangeBySubscription(ctx con
 }
 
 func getDefaultResourceQuota(ns, name string, hard corev1.ResourceList) *corev1.ResourceQuota {
+	// 强制确保 LoadBalancer 服务限制为 0，不允许订阅计划覆盖
+	if hard == nil {
+		hard = make(corev1.ResourceList)
+	}
+	hard["services.loadbalancers"] = resource.MustParse("0")
+	
 	return &corev1.ResourceQuota{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

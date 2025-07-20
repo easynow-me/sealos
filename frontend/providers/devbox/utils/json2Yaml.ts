@@ -6,6 +6,7 @@ import { produce } from 'immer';
 import { parseTemplateConfig, str2Num } from './tools';
 import { getUserNamespace } from './user';
 import { RuntimeNamespaceMap } from '@/types/static';
+import { json2IstioResources } from './json2Istio';
 
 export const json2Devbox = (
   data: DevboxEditType,
@@ -375,29 +376,83 @@ export const generateYamlList = (
   env: {
     devboxAffinityEnable?: string;
     squashEnable?: string;
-    ingressSecret: string;
+    ingressSecret?: string;
+    useIstio?: boolean;
+    gatewayName?: string;
+    sharedGateway?: boolean;
   }
 ) => {
-  return [
+  const baseYamls = [
     {
       filename: 'devbox.yaml',
       value: json2DevboxV2(data, env.devboxAffinityEnable, env.squashEnable)
-    },
-    ...(data.networks.length > 0
-      ? [
-          {
-            filename: 'service.yaml',
-            value: json2Service(data)
-          }
-        ]
-      : []),
-    ...(data.networks.find((item) => item.openPublicDomain)
-      ? [
-          {
-            filename: 'ingress.yaml',
-            value: json2Ingress(data, env.ingressSecret)
-          }
-        ]
-      : [])
+    }
   ];
+
+  // Add service if there are networks
+  if (data.networks.length > 0) {
+    baseYamls.push({
+      filename: 'service.yaml',
+      value: json2Service(data)
+    });
+  }
+
+  // Add networking resources based on configuration
+  const hasPublicDomain = data.networks.find((item) => item.openPublicDomain);
+  if (hasPublicDomain) {
+    if (env.useIstio) {
+      // Use Istio Gateway/VirtualService
+      const istioYaml = json2IstioResources(data, {
+        gatewayName: env.gatewayName,
+        sharedGateway: env.sharedGateway
+      });
+      if (istioYaml) {
+        baseYamls.push({
+          filename: 'istio-networking.yaml',
+          value: istioYaml
+        });
+      }
+    } else {
+      // Use traditional Ingress (fallback for backward compatibility)
+      if (env.ingressSecret) {
+        baseYamls.push({
+          filename: 'ingress.yaml',
+          value: json2Ingress(data, env.ingressSecret)
+        });
+      }
+    }
+  }
+
+  return baseYamls.filter(item => item.value); // Remove empty entries
+};
+
+// Enhanced dual-mode function that supports both Ingress and Istio
+export const generateNetworkingYaml = (
+  data: Pick<DevboxEditTypeV2, 'name' | 'networks'>,
+  mode: 'ingress' | 'istio' = 'ingress',
+  options?: {
+    ingressSecret?: string;
+    gatewayName?: string;
+    sharedGateway?: boolean;
+  }
+) => {
+  const hasPublicDomain = data.networks.find((item) => item.openPublicDomain);
+  if (!hasPublicDomain) {
+    return '';
+  }
+
+  if (mode === 'istio') {
+    return json2IstioResources(data, {
+      gatewayName: options?.gatewayName,
+      sharedGateway: options?.sharedGateway
+    });
+  } else {
+    // Fallback to Ingress mode
+    return options?.ingressSecret ? json2Ingress(data, options.ingressSecret) : '';
+  }
+};
+
+// Migration utility to help convert existing configurations
+export const getNetworkingMode = (env?: { useIstio?: boolean; enableIstio?: boolean }): 'ingress' | 'istio' => {
+  return env?.useIstio || env?.enableIstio ? 'istio' : 'ingress';
 };

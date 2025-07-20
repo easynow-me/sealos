@@ -7,5 +7,7 @@ export enum KubeObjectKind {
   Secret = 'Secret',
   Ingress = 'Ingress',
   Event = 'Event',
-  Service = 'Service'
+  Service = 'Service',
+  Gateway = 'Gateway',
+  VirtualService = 'VirtualService'
 }

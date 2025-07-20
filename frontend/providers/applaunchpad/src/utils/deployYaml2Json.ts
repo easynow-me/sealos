@@ -12,6 +12,7 @@ import type { AppEditType } from '@/types/app';
 import { pathFormat, mountPathToConfigMapKey, str2Num, strToBase64 } from '@/utils/tools';
 import dayjs from 'dayjs';
 import yaml from 'js-yaml';
+import { json2IstioResources, json2NetworkingResources } from './istioYaml';
 
 export const json2DeployCr = (data: AppEditType, type: 'deployment' | 'statefulset') => {
   const totalStorage = data.storeList.reduce((acc, item) => acc + item.value, 0);
@@ -551,4 +552,118 @@ export const json2HPA = (data: AppEditType) => {
     }
   };
   return yaml.dump(template);
+};
+
+// Comprehensive function to generate complete deployment YAML with dual networking support
+export const generateAppDeployment = (
+  data: AppEditType,
+  options?: {
+    networkingMode?: 'ingress' | 'istio';
+    gatewayName?: string;
+    sharedGateway?: boolean;
+    enableTracing?: boolean;
+  }
+) => {
+  const { networkingMode = 'ingress', gatewayName, sharedGateway, enableTracing } = options || {};
+  const isDeployment = data.storeList?.length === 0;
+  const results: { filename: string; value: string }[] = [];
+
+  // Generate main deployment resource
+  results.push({
+    filename: `${isDeployment ? 'deployment' : 'statefulset'}.yaml`,
+    value: json2DeployCr(data, isDeployment ? 'deployment' : 'statefulset')
+  });
+
+  // Generate Service
+  const serviceYaml = json2Service(data);
+  if (serviceYaml) {
+    results.push({
+      filename: 'service.yaml',
+      value: serviceYaml
+    });
+  }
+
+  // Generate networking resources based on mode
+  const hasPublicNetworks = data.networks.some(network => network.openPublicDomain && !network.openNodePort);
+  if (hasPublicNetworks) {
+    if (networkingMode === 'istio') {
+      const istioYaml = json2IstioResources(data, {
+        gatewayName,
+        sharedGateway,
+        enableTracing
+      });
+      if (istioYaml) {
+        results.push({
+          filename: 'istio-networking.yaml',
+          value: istioYaml
+        });
+      }
+    } else {
+      const ingressYaml = json2Ingress(data);
+      if (ingressYaml) {
+        results.push({
+          filename: 'ingress.yaml',
+          value: ingressYaml
+        });
+      }
+    }
+  }
+
+  // Generate ConfigMap if needed
+  const configMapYaml = json2ConfigMap(data);
+  if (configMapYaml) {
+    results.push({
+      filename: 'configmap.yaml',
+      value: configMapYaml
+    });
+  }
+
+  // Generate Secret if needed
+  if (data.secret.use) {
+    results.push({
+      filename: 'secret.yaml',
+      value: json2Secret(data)
+    });
+  }
+
+  // Generate HPA if needed
+  if (data.hpa.use) {
+    results.push({
+      filename: 'hpa.yaml',
+      value: json2HPA(data)
+    });
+  }
+
+  return results.filter(item => item.value); // Remove empty entries
+};
+
+// Enhanced networking function that supports both modes
+export const generateNetworkingResources = (
+  data: AppEditType,
+  mode: 'ingress' | 'istio' = 'ingress',
+  options?: {
+    gatewayName?: string;
+    sharedGateway?: boolean;
+    enableTracing?: boolean;
+  }
+) => {
+  const hasPublicNetworks = data.networks.some(network => network.openPublicDomain && !network.openNodePort);
+  if (!hasPublicNetworks) {
+    return '';
+  }
+
+  if (mode === 'istio') {
+    return json2IstioResources(data, options);
+  } else {
+    return json2Ingress(data);
+  }
+};
+
+// Utility function to determine networking mode from environment
+export const getNetworkingMode = (env?: { 
+  useIstio?: boolean; 
+  enableIstio?: boolean; 
+  istioEnabled?: boolean 
+}): 'ingress' | 'istio' => {
+  return env?.useIstio || env?.enableIstio || env?.istioEnabled ? 'istio' : 'ingress';
 };

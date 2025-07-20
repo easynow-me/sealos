@@ -1,6 +1,7 @@
 import {
   ConfigMap,
   Deployment,
+  Gateway,
   Ingress,
   KubeEvent,
   KubeObject,
@@ -8,7 +9,8 @@ import {
   PersistentVolumeClaim,
   Pod,
   Secret,
-  StatefulSet
+  StatefulSet,
+  VirtualService
 } from '@/k8slens/kube-object';
 import EventSource from 'eventsource';
 
@@ -46,3 +48,5 @@ type SecretStore = KubeStore<Secret>;
 type IngressStore = KubeStore<Ingress>;
 type EventStore = KubeStore<KubeEvent>;
 type ServiceStore = KubeStore<Service>;
+type GatewayStore = KubeStore<Gateway>;
+type VirtualServiceStore = KubeStore<VirtualService>;

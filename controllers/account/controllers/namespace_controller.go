@@ -241,6 +241,7 @@ func GetLimit0ResourceQuota(namespace string) *corev1.ResourceQuota {
 		corev1.ResourceLimitsMemory:     resource.MustParse("0"),
 		corev1.ResourceRequestsStorage:  resource.MustParse("0"),
 		corev1.ResourceEphemeralStorage: resource.MustParse("0"),
+		"services.loadbalancers":        resource.MustParse("0"), // 强制禁止 LoadBalancer 服务
 	}
 	return &quota
 }

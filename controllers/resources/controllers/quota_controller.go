@@ -208,6 +208,12 @@ func AdjustQuota(quota *corev1.ResourceQuota) bool {
 		}
 	}
 
+	// 强制确保 LoadBalancer 服务限制始终为 0，不允许动态调整
+	if loadBalancerQuota, exists := quota.Spec.Hard["services.loadbalancers"]; !exists || loadBalancerQuota.String() != "0" {
+		quota.Spec.Hard["services.loadbalancers"] = resource.MustParse("0")
+		updateRequired = true
+	}
+
 	return updateRequired
 }
 

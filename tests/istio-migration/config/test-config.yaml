@@ -1,0 +1,227 @@
+# Istio Migration Integration Test Configuration
+
+# Global test settings
+global:
+  timeout: 300s  # Default test timeout
+  retries: 3     # Default retry count
+  parallel: true # Enable parallel test execution
+  verbose: true  # Verbose logging
+
+# Test cluster configuration
+cluster:
+  name: "sealos-test"
+  kubeconfig: ""  # Use default kubeconfig if empty
+  
+# Istio configuration
+istio:
+  namespace: "istio-system"
+  gateway_class: "istio"
+  ingress_gateway: "istio-ingressgateway"
+  
+# Sealos configuration  
+sealos:
+  namespace: "sealos-system"
+  domain_suffix: "cloud.sealos.io"
+  wildcard_cert: "wildcard-cert"
+
+# Test environments
+environments:
+  # Development environment
+  dev:
+    enabled: true
+    namespace_prefix: "test-dev"
+    resource_limits:
+      cpu: "100m"
+      memory: "128Mi"
+    domain: "dev.test.sealos.io"
+    
+  # Staging environment  
+  staging:
+    enabled: true
+    namespace_prefix: "test-staging"
+    resource_limits:
+      cpu: "200m" 
+      memory: "256Mi"
+    domain: "staging.test.sealos.io"
+    
+  # Production-like environment
+  prod:
+    enabled: false  # Disabled by default for safety
+    namespace_prefix: "test-prod"
+    resource_limits:
+      cpu: "500m"
+      memory: "512Mi"  
+    domain: "prod.test.sealos.io"
+
+# Functional test configuration
+functional:
+  # Multi-tenant isolation tests
+  multi_tenant:
+    enabled: true
+    test_namespaces: 5
+    cross_namespace_access: false
+    
+  # Protocol support tests
+  protocols:
+    enabled: true
+    http:
+      enabled: true
+      test_endpoints: 3
+      cors_enabled: true
+    grpc:
+      enabled: true  
+      test_services: 2
+      streaming: true
+    websocket:
+      enabled: true
+      test_connections: 5
+      long_running: true
+      
+  # Certificate tests
+  certificates:
+    enabled: true
+    letsencrypt: true
+    custom_certs: true
+    wildcard: true
+    
+  # Domain management tests
+  domains:
+    enabled: true
+    auto_allocation: true
+    custom_domains: true
+    conflict_resolution: true
+    
+  # CORS configuration tests  
+  cors:
+    enabled: true
+    origins: ["https://test1.sealos.io", "https://test2.sealos.io"]
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    headers: ["content-type", "authorization", "x-custom-header"]
+
+# Performance test configuration
+performance:
+  enabled: true
+  
+  # Latency tests
+  latency:
+    enabled: true
+    duration: "60s"
+    concurrent_users: [1, 10, 50, 100]
+    target_p95: "100ms"  # Target P95 latency
+    
+  # Throughput tests
+  throughput:
+    enabled: true
+    duration: "120s"
+    max_rps: 1000
+    target_rps: 500
+    
+  # Resource consumption tests
+  resources:
+    enabled: true
+    monitoring_duration: "300s"
+    cpu_threshold: "80%"
+    memory_threshold: "80%"
+    
+  # Scale tests
+  scale:
+    enabled: true
+    max_applications: 100
+    concurrent_deployments: 10
+    namespace_count: 20
+
+# Compatibility test configuration  
+compatibility:
+  enabled: true
+  
+  # Upgrade path tests
+  upgrade:
+    enabled: true
+    from_version: "ingress"
+    to_version: "istio"
+    rollback_timeout: "300s"
+    
+  # Rollback tests
+  rollback:
+    enabled: true
+    scenarios: ["failure", "manual", "automatic"]
+    data_consistency: true
+    
+  # Integration tests
+  integration:
+    enabled: true
+    terminal_controller: true
+    db_adminer: true
+    app_launchpad: true
+    devbox: true
+
+# Test data configuration
+test_data:
+  # Sample applications
+  applications:
+    simple_http:
+      image: "nginx:alpine"
+      port: 80
+      protocol: "HTTP"
+      
+    grpc_service:
+      image: "grpc/java-example-hostname:latest"
+      port: 50051
+      protocol: "GRPC"
+      
+    websocket_app:
+      image: "jmalloc/echo-server:latest"
+      port: 8080
+      protocol: "WS"
+      
+  # Test certificates
+  certificates:
+    self_signed: true
+    ca_cert: "/path/to/ca.crt"
+    ca_key: "/path/to/ca.key"
+    
+  # Test domains
+  domains:
+    - "app1.test.sealos.io"
+    - "app2.test.sealos.io"  
+    - "ws.test.sealos.io"
+    - "grpc.test.sealos.io"
+
+# Monitoring and reporting
+monitoring:
+  enabled: true
+  prometheus: true
+  grafana: false
+  metrics_retention: "7d"
+  
+reporting:
+  enabled: true
+  format: ["json", "html", "junit"]
+  output_dir: "./reports"
+  include_logs: true
+  include_metrics: true
+
+# Cleanup configuration
+cleanup:
+  enabled: true
+  auto_cleanup: true  # Cleanup after each test
+  cleanup_timeout: "120s"
+  preserve_on_failure: true  # Keep resources for debugging
+
+# Debugging configuration
+debug:
+  enabled: false
+  log_level: "info"  # debug, info, warn, error
+  capture_packets: false
+  save_manifests: true
+  interactive_mode: false
+
+# Notification configuration (optional)
+notifications:
+  enabled: false
+  slack:
+    webhook_url: ""
+    channel: "#sealos-tests"
+  email:
+    smtp_server: ""
+    recipients: []

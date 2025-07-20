@@ -445,6 +445,7 @@ func DefaultResourceQuotaHard() corev1.ResourceList {
 		corev1.ResourceRequestsStorage:        resource.MustParse(env.GetEnvWithDefault(QuotaLimitsStorage, DefaultQuotaLimitsStorage)),
 		corev1.ResourceLimitsEphemeralStorage: resource.MustParse(env.GetEnvWithDefault(QuotaLimitsStorage, DefaultQuotaLimitsStorage)),
 		corev1.ResourceServicesNodePorts:      resource.MustParse(env.GetEnvWithDefault(QuotaLimitsNodePorts, DefaultQuotaLimitsNodePorts)),
+		"services.loadbalancers":              resource.MustParse("0"), // 强制禁止 LoadBalancer 服务
 		ResourceObjectStorageSize:             resource.MustParse(env.GetEnvWithDefault(QuotaObjectStorageSize, DefaultQuotaObjectStorageSize)),
 		ResourceObjectStorageBucket:           resource.MustParse(env.GetEnvWithDefault(QuotaObjectStorageBucket, DefaultQuotaObjectStorageBucket)),
 		//TODO storage.diskio.read, storage.diskio.write
@@ -492,6 +493,8 @@ func ParseResourceLimitWithSubscription(plans []types.SubscriptionPlan) (map[str
 					rl[ResourceLimitGpu] = _v
 				}
 			}
+			// 强制添加 LoadBalancer 限制，不允许订阅计划覆盖
+			rl["services.loadbalancers"] = resource.MustParse("0")
 			subPlansLimit[plans[i].Name] = rl
 		}
 	}

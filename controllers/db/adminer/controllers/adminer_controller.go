@@ -83,6 +83,8 @@ type AdminerReconciler struct {
 	image           string
 	secretName      string
 	secretNamespace string
+	istioReconciler *AdminerIstioNetworkingReconciler
+	useIstio        bool
 }
 
 //+kubebuilder:rbac:groups=adminer.db.sealos.io,resources=adminers,verbs=get;list;watch;create;update;patch;delete
@@ -93,6 +95,9 @@ type AdminerReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch;create;update;patch;delete
 
 //-kubebuilder:rbac:groups=core,resources=endpoints,verbs=get;list;watch
 
@@ -164,9 +169,9 @@ func (r *AdminerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, err
 	}
 
-	if err := r.syncIngress(ctx, adminer, hostname, recLabels); err != nil {
-		logger.Error(err, "create ingress failed")
-		r.recorder.Eventf(adminer, corev1.EventTypeWarning, "Create ingress failed", "%v", err)
+	if err := r.syncNetworking(ctx, adminer, hostname, recLabels); err != nil {
+		logger.Error(err, "create networking failed")
+		r.recorder.Eventf(adminer, corev1.EventTypeWarning, "Create networking failed", "%v", err)
 		return ctrl.Result{}, err
 	}
 
@@ -416,6 +421,16 @@ func (r *AdminerReconciler) syncService(ctx context.Context, adminer *adminerv1.
 	return nil
 }
 
+func (r *AdminerReconciler) syncNetworking(ctx context.Context, adminer *adminerv1.Adminer, hostname string, recLabels map[string]string) error {
+	// 根据配置决定使用 Istio 还是 Ingress
+	if r.useIstio && r.istioReconciler != nil {
+		return r.syncIstioNetworking(ctx, adminer, hostname, recLabels)
+	}
+	
+	// 回退到原有的 Ingress 模式
+	return r.syncIngress(ctx, adminer, hostname, recLabels)
+}
+
 func (r *AdminerReconciler) syncIngress(ctx context.Context, adminer *adminerv1.Adminer, hostname string, recLabels map[string]string) error {
 	var err error
 	host := hostname + "." + r.adminerDomain
@@ -424,6 +439,29 @@ func (r *AdminerReconciler) syncIngress(ctx context.Context, adminer *adminerv1.
 		err = r.syncNginxIngress(ctx, adminer, host, recLabels)
 	}
 	return err
+}
+
+func (r *AdminerReconciler) syncIstioNetworking(ctx context.Context, adminer *adminerv1.Adminer, hostname string, recLabels map[string]string) error {
+	// 使用 Istio 网络配置
+	if err := r.istioReconciler.SyncIstioNetworking(ctx, adminer, hostname); err != nil {
+		return err
+	}
+	
+	// 更新 Adminer 状态中的域名
+	host := hostname + "." + r.adminerDomain
+	var protocol string
+	if r.tlsEnabled {
+		protocol = protocolHTTPS
+	} else {
+		protocol = protocolHTTP
+	}
+	domain := protocol + host
+	if adminer.Status.Domain != domain {
+		adminer.Status.Domain = domain
+		return r.Status().Update(ctx, adminer)
+	}
+	
+	return nil
 }
 
 func (r *AdminerReconciler) syncNginxIngress(ctx context.Context, adminer *adminerv1.Adminer, host string, recLabels map[string]string) error {

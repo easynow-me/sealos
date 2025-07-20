@@ -5,7 +5,10 @@
       "Bash(ls:*)",
       "Bash(go build:*)",
       "Bash(go test:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(grep:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run:*)"
     ],
     "deny": []
   }

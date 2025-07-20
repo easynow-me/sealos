@@ -18,27 +18,36 @@ package controllers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/labring/sealos/controllers/pkg/istio"
 )
 
-// NetworkReconciler reconciles Namespace, Ingress, and Service objects to manage network traffic
+// NetworkReconciler reconciles Namespace, Ingress, VirtualService and Service objects to manage network traffic
 type NetworkReconciler struct {
-	Client client.Client
-	Log    logr.Logger
+	Client           client.Client
+	Log              logr.Logger
+	networkingManager istio.NetworkingManager
+	useIstio         bool
 }
 
 const (
@@ -55,6 +64,8 @@ const (
 
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;update;patch
 
 func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -141,6 +152,14 @@ func (r *NetworkReconciler) handleResource(ctx context.Context, key client.Objec
 		return nil
 	}
 
+	// 根据配置决定处理 Istio 还是 Ingress 资源
+	if r.useIstio {
+		return r.handleIstioResource(ctx, key)
+	}
+	return r.handleIngressResource(ctx, key)
+}
+
+func (r *NetworkReconciler) handleIngressResource(ctx context.Context, key client.ObjectKey) error {
 	// Try fetching as Ingress
 	ingress := networkingv1.Ingress{}
 	if err := r.Client.Get(ctx, key, &ingress); err == nil {
@@ -181,7 +200,101 @@ func (r *NetworkReconciler) handleResource(ctx context.Context, key client.Objec
 	return nil
 }
 
+func (r *NetworkReconciler) handleIstioResource(ctx context.Context, key client.ObjectKey) error {
+	// Try fetching as VirtualService
+	vs := &unstructured.Unstructured{}
+	vs.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.istio.io",
+		Version: "v1beta1",
+		Kind:    "VirtualService",
+	})
+	
+	if err := r.Client.Get(ctx, key, vs); err == nil {
+		// 检查是否已经暂停
+		if annotations := vs.GetAnnotations(); annotations != nil {
+			if annotations["network.sealos.io/suspended"] == "true" {
+				return nil // 已经暂停
+			}
+		}
+		
+		// 添加暂停注解
+		annotations := vs.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+		annotations["network.sealos.io/suspended"] = "true"
+		
+		// 备份原始 HTTP 路由
+		spec, found, err := unstructured.NestedMap(vs.Object, "spec")
+		if err == nil && found {
+			if httpRoutes, found, _ := unstructured.NestedSlice(spec, "http"); found {
+				annotations["network.sealos.io/original-http"] = r.encodeRoutes(httpRoutes)
+			}
+		}
+		vs.SetAnnotations(annotations)
+		
+		// 设置暂停路由
+		suspendRoute := []interface{}{
+			map[string]interface{}{
+				"match": []interface{}{
+					map[string]interface{}{
+						"uri": map[string]interface{}{
+							"prefix": "/",
+						},
+					},
+				},
+				"directResponse": map[string]interface{}{
+					"status": 503,
+					"body": map[string]interface{}{
+						"string": "Service temporarily suspended for resource management",
+					},
+				},
+			},
+		}
+		
+		unstructured.SetNestedSlice(vs.Object, suspendRoute, "spec", "http")
+		
+		if err := r.Client.Update(ctx, vs); err != nil {
+			return fmt.Errorf("failed to suspend virtual service %s: %w", key.Name, err)
+		}
+		r.Log.V(1).Info("Suspended virtual service", "name", key.Name)
+		return nil
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get virtual service %s: %w", key.Name, err)
+	}
+
+	// Try fetching as Service (NodePort services still need to be handled in Istio mode)
+	svc := corev1.Service{}
+	if err := r.Client.Get(ctx, key, &svc); err == nil {
+		if svc.Spec.Type == corev1.ServiceTypeNodePort && (svc.Labels == nil || svc.Labels[NodePortLabelKey] != True) {
+			if svc.Labels == nil {
+				svc.Labels = make(map[string]string)
+			}
+			svc.Labels[NodePortLabelKey] = True
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+			if err := r.Client.Update(ctx, &svc); err != nil {
+				return fmt.Errorf("failed to suspend service %s: %w", key.Name, err)
+			}
+			r.Log.V(1).Info("Suspended service", "name", key.Name)
+		}
+		return nil
+	} else if !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to get service %s: %w", key.Name, err)
+	}
+
+	return nil
+}
+
 func (r *NetworkReconciler) suspendNetworkResources(ctx context.Context, namespace string) error {
+	// 根据配置决定使用 Istio 还是 Ingress
+	if r.useIstio && r.networkingManager != nil {
+		return r.suspendIstioResources(ctx, namespace)
+	}
+	
+	return r.suspendIngressResources(ctx, namespace)
+}
+
+func (r *NetworkReconciler) suspendIngressResources(ctx context.Context, namespace string) error {
 	// Suspend Ingresses
 	ingressList := networkingv1.IngressList{}
 	if err := r.Client.List(ctx, &ingressList, client.InNamespace(namespace)); err != nil {
@@ -224,6 +337,15 @@ func (r *NetworkReconciler) suspendNetworkResources(ctx context.Context, namespa
 }
 
 func (r *NetworkReconciler) resumeNetworkResources(ctx context.Context, namespace string) error {
+	// 根据配置决定使用 Istio 还是 Ingress
+	if r.useIstio && r.networkingManager != nil {
+		return r.resumeIstioResources(ctx, namespace)
+	}
+	
+	return r.resumeIngressResources(ctx, namespace)
+}
+
+func (r *NetworkReconciler) resumeIngressResources(ctx context.Context, namespace string) error {
 	// Resume Ingresses
 	ingressList := networkingv1.IngressList{}
 	if err := r.Client.List(ctx, &ingressList, client.InNamespace(namespace)); err != nil {
@@ -258,6 +380,171 @@ func (r *NetworkReconciler) resumeNetworkResources(ctx context.Context, namespac
 	}
 
 	return nil
+}
+
+func (r *NetworkReconciler) suspendIstioResources(ctx context.Context, namespace string) error {
+	// Suspend VirtualServices by setting traffic to 0
+	vsList := &unstructured.UnstructuredList{}
+	vsList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.istio.io",
+		Version: "v1beta1",
+		Kind:    "VirtualServiceList",
+	})
+	
+	if err := r.Client.List(ctx, vsList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list virtual services in namespace %s: %w", namespace, err)
+	}
+	
+	for _, vs := range vsList.Items {
+		// 检查是否已经暂停
+		if annotations := vs.GetAnnotations(); annotations != nil {
+			if annotations["network.sealos.io/suspended"] == "true" {
+				continue
+			}
+		}
+		
+		// 添加暂停注解
+		annotations := vs.GetAnnotations()
+		if annotations == nil {
+			annotations = make(map[string]string)
+		}
+		annotations["network.sealos.io/suspended"] = "true"
+		vs.SetAnnotations(annotations)
+		
+		// 修改 VirtualService 规则，将流量重定向到 503 页面
+		spec, found, err := unstructured.NestedMap(vs.Object, "spec")
+		if err != nil || !found {
+			continue
+		}
+		
+		// 备份原始 HTTP 路由
+		if httpRoutes, found, _ := unstructured.NestedSlice(spec, "http"); found {
+			annotations["network.sealos.io/original-http"] = r.encodeRoutes(httpRoutes)
+			vs.SetAnnotations(annotations)
+		}
+		
+		// 设置暂停路由
+		suspendRoute := []interface{}{
+			map[string]interface{}{
+				"match": []interface{}{
+					map[string]interface{}{
+						"uri": map[string]interface{}{
+							"prefix": "/",
+						},
+					},
+				},
+				"directResponse": map[string]interface{}{
+					"status": 503,
+					"body": map[string]interface{}{
+						"string": "Service temporarily suspended for resource management",
+					},
+				},
+			},
+		}
+		
+		unstructured.SetNestedSlice(vs.Object, suspendRoute, "spec", "http")
+		
+		if err := r.Client.Update(ctx, &vs); err != nil {
+			return fmt.Errorf("failed to suspend virtual service %s: %w", vs.GetName(), err)
+		}
+		r.Log.V(1).Info("Suspended virtual service", "name", vs.GetName())
+	}
+	
+	// 同样暂停 NodePort Services
+	serviceList := corev1.ServiceList{}
+	if err := r.Client.List(ctx, &serviceList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list services in namespace %s: %w", namespace, err)
+	}
+	for _, svc := range serviceList.Items {
+		if svc.Spec.Type != corev1.ServiceTypeNodePort {
+			continue
+		}
+		if svc.Labels == nil {
+			svc.Labels = make(map[string]string)
+		}
+		svc.Labels[NodePortLabelKey] = True
+		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		if err := r.Client.Update(ctx, &svc); err != nil {
+			return fmt.Errorf("failed to suspend service %s: %w", svc.Name, err)
+		}
+		r.Log.V(1).Info("Suspended service", "name", svc.Name)
+	}
+	
+	return nil
+}
+
+func (r *NetworkReconciler) resumeIstioResources(ctx context.Context, namespace string) error {
+	// Resume VirtualServices
+	vsList := &unstructured.UnstructuredList{}
+	vsList.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "networking.istio.io",
+		Version: "v1beta1",
+		Kind:    "VirtualServiceList",
+	})
+	
+	if err := r.Client.List(ctx, vsList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list virtual services in namespace %s: %w", namespace, err)
+	}
+	
+	for _, vs := range vsList.Items {
+		// 检查是否被暂停
+		annotations := vs.GetAnnotations()
+		if annotations == nil || annotations["network.sealos.io/suspended"] != "true" {
+			continue
+		}
+		
+		// 恢复原始路由
+		if originalHTTP, exists := annotations["network.sealos.io/original-http"]; exists {
+			if routes := r.decodeRoutes(originalHTTP); routes != nil {
+				unstructured.SetNestedSlice(vs.Object, routes, "spec", "http")
+			}
+			delete(annotations, "network.sealos.io/original-http")
+		}
+		
+		// 移除暂停注解
+		delete(annotations, "network.sealos.io/suspended")
+		vs.SetAnnotations(annotations)
+		
+		if err := r.Client.Update(ctx, &vs); err != nil {
+			return fmt.Errorf("failed to resume virtual service %s: %w", vs.GetName(), err)
+		}
+		r.Log.V(1).Info("Resumed virtual service", "name", vs.GetName())
+	}
+	
+	// Resume NodePort Services
+	serviceList := corev1.ServiceList{}
+	if err := r.Client.List(ctx, &serviceList, client.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list services in namespace %s: %w", namespace, err)
+	}
+	for _, svc := range serviceList.Items {
+		if svc.Labels == nil || svc.Labels[NodePortLabelKey] != True {
+			continue
+		}
+		svc.Spec.Type = corev1.ServiceTypeNodePort
+		delete(svc.Labels, NodePortLabelKey)
+		if err := r.Client.Update(ctx, &svc); err != nil {
+			return fmt.Errorf("failed to resume service %s: %w", svc.Name, err)
+		}
+		r.Log.V(1).Info("Resumed service", "name", svc.Name)
+	}
+	
+	return nil
+}
+
+// encodeRoutes 编码路由为字符串
+func (r *NetworkReconciler) encodeRoutes(routes []interface{}) string {
+	// 简单的 JSON 编码，生产环境可能需要更复杂的序列化
+	data, _ := json.Marshal(routes)
+	return string(data)
+}
+
+// decodeRoutes 解码路由字符串
+func (r *NetworkReconciler) decodeRoutes(encoded string) []interface{} {
+	var routes []interface{}
+	if err := json.Unmarshal([]byte(encoded), &routes); err != nil {
+		return nil
+	}
+	return routes
 }
 
 // SuspendedNamespaceHandler enqueues requests for Ingress and Service objects only in suspended namespaces
@@ -355,7 +642,15 @@ func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.Client = mgr.GetClient()
 	suspendedHandler := &SuspendedNamespaceHandler{Client: r.Client, Logger: r.Log}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	// 初始化 Istio 支持
+	ctx := context.Background()
+	if err := r.SetupIstioSupport(ctx); err != nil {
+		r.Log.Error(err, "failed to setup Istio support, continuing with Ingress mode")
+		r.useIstio = false
+		r.networkingManager = nil
+	}
+
+	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Namespace{}, builder.WithPredicates(NetworkAnnotationPredicate{})).
 		Watches(
 			&networkingv1.Ingress{},
@@ -404,8 +699,39 @@ func (r *NetworkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 					return false
 				},
 			}),
-		).
-		Complete(r)
+		)
+
+	// 如果启用了 Istio，添加对 VirtualService 的监听
+	if r.useIstio {
+		virtualServiceType := &unstructured.Unstructured{}
+		virtualServiceType.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "networking.istio.io",
+			Version: "v1beta1",
+			Kind:    "VirtualService",
+		})
+		
+		controllerBuilder = controllerBuilder.Watches(
+			virtualServiceType,
+			suspendedHandler,
+			builder.WithPredicates(predicate.Funcs{
+				CreateFunc: func(e event.CreateEvent) bool {
+					return true
+				},
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					// 监听 VirtualService 的变化
+					return true
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					return false
+				},
+				GenericFunc: func(e event.GenericEvent) bool {
+					return false
+				},
+			}),
+		)
+	}
+
+	return controllerBuilder.Complete(r)
 }
 
 // NetworkAnnotationPredicate filters namespace events based on network status annotation changes
@@ -435,4 +761,124 @@ func (NetworkAnnotationPredicate) Delete(e event.DeleteEvent) bool {
 
 func (NetworkAnnotationPredicate) Generic(e event.GenericEvent) bool {
 	return false
+}
+
+// SetupIstioSupport 设置 Resources 控制器的 Istio 支持
+func (r *NetworkReconciler) SetupIstioSupport(ctx context.Context) error {
+	logger := log.FromContext(ctx)
+	
+	// 检查是否启用 Istio
+	useIstio := os.Getenv("USE_ISTIO")
+	if useIstio != "true" {
+		logger.Info("Istio support is disabled for Resources controller")
+		r.useIstio = false
+		return nil
+	}
+	
+	// 检查 Istio 是否已安装
+	isEnabled, err := istio.IsIstioEnabled(r.Client)
+	if err != nil {
+		logger.Error(err, "failed to check Istio installation")
+		return err
+	}
+	
+	if !isEnabled {
+		logger.Info("Istio is not installed, falling back to Ingress mode for Resources controller")
+		r.useIstio = false
+		return nil
+	}
+	
+	// 构建 Istio 网络配置
+	config := r.buildIstioNetworkConfig()
+	
+	// 创建 Istio 网络管理器
+	r.networkingManager = istio.NewNetworkingManager(r.Client, config)
+	
+	// 验证 Istio 安装
+	if err := r.validateIstioInstallation(ctx); err != nil {
+		logger.Error(err, "Istio validation failed, falling back to Ingress mode for Resources controller")
+		r.useIstio = false
+		r.networkingManager = nil
+		return nil
+	}
+	
+	r.useIstio = true
+	logger.Info("Istio support enabled for Resources controller")
+	
+	return nil
+}
+
+// buildIstioNetworkConfig 构建 Istio 网络配置
+func (r *NetworkReconciler) buildIstioNetworkConfig() *istio.NetworkConfig {
+	config := istio.DefaultNetworkConfig()
+	
+	// 从环境变量读取配置
+	if baseDomain := os.Getenv("ISTIO_BASE_DOMAIN"); baseDomain != "" {
+		config.BaseDomain = baseDomain
+	}
+	
+	if defaultGateway := os.Getenv("ISTIO_DEFAULT_GATEWAY"); defaultGateway != "" {
+		config.DefaultGateway = defaultGateway
+	}
+	
+	if tlsSecret := os.Getenv("ISTIO_TLS_SECRET"); tlsSecret != "" {
+		config.DefaultTLSSecret = tlsSecret
+	}
+	
+	// Resources 控制器用于网络管理，不需要特定的域名模板
+	// 但我们可以设置一些通用的配置
+	
+	// 检查是否启用 TLS
+	if enableTLS := os.Getenv("ISTIO_ENABLE_TLS"); enableTLS == "false" {
+		config.TLSEnabled = false
+	}
+	
+	// 检查是否使用共享 Gateway
+	if sharedGateway := os.Getenv("ISTIO_SHARED_GATEWAY"); sharedGateway == "false" {
+		config.SharedGatewayEnabled = false
+	}
+	
+	return config
+}
+
+// validateIstioInstallation 验证 Istio 是否已安装
+func (r *NetworkReconciler) validateIstioInstallation(ctx context.Context) error {
+	isEnabled, err := istio.IsIstioEnabled(r.Client)
+	if err != nil {
+		return fmt.Errorf("failed to check Istio installation: %w", err)
+	}
+	
+	if !isEnabled {
+		return fmt.Errorf("Istio is not installed or enabled in the cluster")
+	}
+	
+	return nil
+}
+
+// IsIstioEnabled 检查是否启用了 Istio 模式
+func (r *NetworkReconciler) IsIstioEnabled() bool {
+	return r.useIstio
+}
+
+// EnableIstioMode 动态启用 Istio 模式
+func (r *NetworkReconciler) EnableIstioMode(ctx context.Context) error {
+	if r.useIstio {
+		return nil // 已经启用
+	}
+	
+	return r.SetupIstioSupport(ctx)
+}
+
+// DisableIstioMode 禁用 Istio 模式，回退到 Ingress
+func (r *NetworkReconciler) DisableIstioMode() {
+	r.useIstio = false
+	r.networkingManager = nil
+}
+
+// GetNetworkingMode 获取当前网络模式
+func (r *NetworkReconciler) GetNetworkingMode() string {
+	if r.useIstio {
+		return "Istio"
+	}
+	return "Ingress"
 }
