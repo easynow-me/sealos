@@ -122,3 +122,28 @@ make docker-push
 - `controllers/*/config/crd/bases/*.yaml`：CRD 定义
 - `frontend/desktop/prisma/global/schema.prisma`：数据库模式
 - `lifecycle/pkg/types/v1beta1/config.go`：核心配置类型
+
+### 迁移和开发工具
+
+- **`/tools/istio-migration/`**：Ingress 到 Istio 迁移工具集，包括：
+  - `converter/`：Go 语言编写的 Ingress 到 Gateway/VirtualService 转换工具
+  - `scripts/validate-migration.sh`：迁移验证脚本，支持完整性和流量测试
+  - `scripts/rollback.sh`：快速回滚脚本，支持从 Istio 回滚到 Ingress
+  - `docs/`：详细的操作文档和技术方案设计
+  - `examples/`：测试用例和使用示例
+  
+```bash
+# 构建和使用迁移工具
+cd tools/istio-migration
+make build              # 构建所有工具
+./bin/converter -help   # 查看转换工具帮助
+./scripts/validate-migration.sh -h  # 查看验证脚本帮助
+```
+
+## 项目任务计划
+
+- **`/todo.md`**：项目的详细任务计划和技术改造方案，包括：
+  - Ingress 到 Istio Gateway/VirtualService 迁移计划
+  - 技术可行性分析
+  - 分阶段执行计划
+  - 风险管理和成功标准
