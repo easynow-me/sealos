@@ -84,7 +84,7 @@ spec:
         - /manager
         args:
         - --leader-elect
-        - --ingress-mutate-annotations='{{ .ingressMutatingAnnotations }}'
+        - --ingress-mutating-annotations='{{ .ingressMutatingAnnotations }}'
         image: controller:latest
         env:
         - name: DOMAIN

@@ -42,6 +42,9 @@ import (
 var vslog = logf.Log.WithName("virtualservice-webhook")
 
 //+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch
 
 //+kubebuilder:webhook:path=/mutate-networking-istio-io-v1beta1-virtualservice,mutating=true,failurePolicy=ignore,sideEffects=None,groups=networking.istio.io,resources=virtualservices,verbs=create;update,versions=v1beta1,name=mvirtualservice.sealos.io,admissionReviewVersions=v1
 //+kubebuilder:object:generate=false

@@ -9,6 +9,24 @@
 - 集群管理员权限
 - 至少 8 CPU, 16GB 内存的可用资源
 
+## 环境变量参考
+
+### Admission Webhook 支持的环境变量
+- `ENABLE_ISTIO_WEBHOOKS` - 启用/禁用 Istio webhooks (true/false)
+- `VIRTUALSERVICE_MUTATING_ANNOTATIONS` - VirtualService mutating annotations (key1=value1,key2=value2)
+- `ICP_ENABLED` - 启用 ICP 备案检查 (true/false)
+- `ICP_ENDPOINT` - ICP 检查服务端点
+- `ICP_KEY` - ICP 检查服务密钥
+- `DOMAIN` - 基础域名
+
+### 控制器支持的环境变量
+- `USE_ISTIO` - 启用 Istio 网络模式 (true/false)
+- `ISTIO_DEFAULT_GATEWAY` - 默认 Gateway 名称 (格式: name.namespace)
+- `ISTIO_BASE_DOMAIN` - Istio 基础域名
+- `ISTIO_TLS_SECRET` - TLS 证书 secret 名称
+- `ISTIO_ENABLE_TLS` - 启用 TLS (true/false，默认 true)
+- `ISTIO_SHARED_GATEWAY` - 使用共享 Gateway (true/false，默认 true)
+
 ## 第一步：环境检查和备份
 
 ### 1.1 检查当前环境
@@ -276,20 +294,20 @@ kubectl apply -f default-gateway.yaml
 ## 第六步：更新 Admission Webhooks
 
 ```bash
-# 启用 Istio webhooks
-kubectl set env deployment/admission-webhook -n sealos-system \
+# 启用 Istio webhooks（这里的 deployment 名称是 admission-controller-manager）
+kubectl set env deployment/admission-controller-manager -n sealos-system \
   ENABLE_ISTIO_WEBHOOKS=true \
   VIRTUALSERVICE_MUTATING_ANNOTATIONS="sealos.io/app-name=istio-migrated"
 
 # 重启 webhook
-kubectl rollout restart deployment/admission-webhook -n sealos-system
-kubectl rollout status deployment/admission-webhook -n sealos-system
+kubectl rollout restart deployment/admission-controller-manager -n sealos-system
+kubectl rollout status deployment/admission-controller-manager -n sealos-system
 ```
 
 ## 第七步：更新控制器到 Istio 模式
 
 ```bash
-# 更新所有控制器到双模式
+# 更新所有控制器到 Istio 模式
 CONTROLLERS=(
   "terminal-controller"
   "adminer-controller"
@@ -297,16 +315,24 @@ CONTROLLERS=(
 )
 
 for controller in "${CONTROLLERS[@]}"; do
-  echo "Updating $controller to dual mode..."
+  echo "Updating $controller to Istio mode..."
   kubectl set env deployment/$controller -n sealos-system \
-    USE_ISTIO_NETWORKING=true \
-    USE_INGRESS_NETWORKING=true \
-    ISTIO_ENABLED=true \
-    ISTIO_GATEWAY=sealos-gateway.istio-system
+    USE_ISTIO=true \
+    ISTIO_DEFAULT_GATEWAY=sealos-gateway.istio-system \
+    ISTIO_BASE_DOMAIN=cloud.sealos.io \
+    ISTIO_ENABLE_TLS=true \
+    ISTIO_SHARED_GATEWAY=true
   
   kubectl rollout restart deployment/$controller -n sealos-system
   kubectl rollout status deployment/$controller -n sealos-system
 done
+
+# 注意：
+# - USE_ISTIO=true 启用 Istio 网络模式
+# - ISTIO_DEFAULT_GATEWAY 指定默认的 Gateway 名称和命名空间
+# - ISTIO_BASE_DOMAIN 设置基础域名（请替换为实际域名）
+# - ISTIO_ENABLE_TLS=true 启用 TLS
+# - ISTIO_SHARED_GATEWAY=true 使用共享的 Gateway
 ```
 
 ## 第八步：部署监控
@@ -403,19 +429,19 @@ if [ "$response" = "yes" ]; then
 fi
 ```
 
-## 第十二步：切换到 Istio-only 模式
+## 第十二步：验证 Istio-only 模式
 
 ```bash
-# 更新控制器到 Istio-only 模式
+# 验证控制器已经在 Istio 模式下运行
 for controller in "${CONTROLLERS[@]}"; do
-  echo "Updating $controller to Istio-only mode..."
-  kubectl set env deployment/$controller -n sealos-system \
-    USE_ISTIO_NETWORKING=true \
-    USE_INGRESS_NETWORKING=false
-  
-  kubectl rollout restart deployment/$controller -n sealos-system
-  kubectl rollout status deployment/$controller -n sealos-system
+  echo "Verifying $controller Istio configuration..."
+  kubectl get deployment/$controller -n sealos-system -o json | \
+    jq -r '.spec.template.spec.containers[0].env[] | select(.name=="USE_ISTIO") | .value'
 done
+
+# 注意：在第七步中，我们已经设置了 USE_ISTIO=true
+# 这已经启用了 Istio-only 模式，因为控制器会根据 USE_ISTIO 环境变量
+# 来决定是使用 Istio VirtualService 还是 Kubernetes Ingress
 ```
 
 ## 第十三步：最终验证

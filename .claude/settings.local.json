@@ -30,7 +30,8 @@
       "Bash(golangci-lint run:*)",
       "Bash(go vet:*)",
       "Bash(go mod:*)",
-      "Bash(go doc:*)"
+      "Bash(go doc:*)",
+      "Bash(make:*)"
     ],
     "deny": []
   }

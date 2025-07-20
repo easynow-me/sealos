@@ -25,10 +25,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,6 +74,46 @@ const (
 	MemoryLimit   = "128Mi"
 )
 
+// retryUpdateOnConflict retries the update operation when there's a resource version conflict
+func retryUpdateOnConflict(ctx context.Context, c client.Client, obj client.Object, updateFunc func()) error {
+	return wait.PollImmediate(100*time.Millisecond, 3*time.Second, func() (bool, error) {
+		updateFunc()
+		err := c.Update(ctx, obj)
+		if err != nil {
+			if errors.IsConflict(err) {
+				// Resource version conflict, need to get the latest version and retry
+				key := client.ObjectKeyFromObject(obj)
+				if getErr := c.Get(ctx, key, obj); getErr != nil {
+					return false, getErr
+				}
+				return false, nil // Retry with updated object
+			}
+			return false, err // Other errors should not be retried
+		}
+		return true, nil // Success
+	})
+}
+
+// retryStatusUpdateOnConflict retries the status update operation when there's a resource version conflict
+func retryStatusUpdateOnConflict(ctx context.Context, c client.Client, obj client.Object, updateFunc func()) error {
+	return wait.PollImmediate(100*time.Millisecond, 3*time.Second, func() (bool, error) {
+		updateFunc()
+		err := c.Status().Update(ctx, obj)
+		if err != nil {
+			if errors.IsConflict(err) {
+				// Resource version conflict, need to get the latest version and retry
+				key := client.ObjectKeyFromObject(obj)
+				if getErr := c.Get(ctx, key, obj); getErr != nil {
+					return false, getErr
+				}
+				return false, nil // Retry with updated object
+			}
+			return false, err // Other errors should not be retried
+		}
+		return true, nil // Success
+	})
+}
+
 // AdminerReconciler reconciles a Adminer object
 type AdminerReconciler struct {
 	client.Client
@@ -96,8 +138,11 @@ type AdminerReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules/status,verbs=get;update;patch
 
 //-kubebuilder:rbac:groups=core,resources=endpoints,verbs=get;list;watch
 
@@ -119,13 +164,17 @@ func (r *AdminerReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	if adminer.ObjectMeta.DeletionTimestamp.IsZero() {
 		if controllerutil.AddFinalizer(adminer, FinalizerName) {
-			if err := r.Update(ctx, adminer); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, adminer, func() {
+				controllerutil.AddFinalizer(adminer, FinalizerName)
+			}); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
 	} else {
 		if controllerutil.RemoveFinalizer(adminer, FinalizerName) {
-			if err := r.Update(ctx, adminer); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, adminer, func() {
+				controllerutil.RemoveFinalizer(adminer, FinalizerName)
+			}); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -381,8 +430,9 @@ func (r *AdminerReconciler) syncDeployment(ctx context.Context, adminer *adminer
 		return err
 	}
 
-	adminer.Status.AvailableReplicas = deployment.Status.ReadyReplicas
-	return r.Status().Update(ctx, adminer)
+	return retryStatusUpdateOnConflict(ctx, r.Client, adminer, func() {
+		adminer.Status.AvailableReplicas = deployment.Status.ReadyReplicas
+	})
 }
 
 func (r *AdminerReconciler) syncService(ctx context.Context, adminer *adminerv1.Adminer, recLabels map[string]string) error {
@@ -457,8 +507,9 @@ func (r *AdminerReconciler) syncIstioNetworking(ctx context.Context, adminer *ad
 	}
 	domain := protocol + host
 	if adminer.Status.Domain != domain {
-		adminer.Status.Domain = domain
-		return r.Status().Update(ctx, adminer)
+		return retryStatusUpdateOnConflict(ctx, r.Client, adminer, func() {
+			adminer.Status.Domain = domain
+		})
 	}
 	
 	return nil
@@ -489,23 +540,22 @@ func (r *AdminerReconciler) syncNginxIngress(ctx context.Context, adminer *admin
 
 	domain := protocol + host
 	if adminer.Status.Domain != domain {
-		adminer.Status.Domain = domain
-		return r.Status().Update(ctx, adminer)
+		return retryStatusUpdateOnConflict(ctx, r.Client, adminer, func() {
+			adminer.Status.Domain = domain
+		})
 	}
 
 	return nil
 }
 
 func (r *AdminerReconciler) fillDefaultValue(ctx context.Context, adminer *adminerv1.Adminer) error {
-	hasUpdate := false
-
 	if _, ok := adminer.ObjectMeta.Annotations[KeepaliveAnnotation]; !ok {
-		adminer.ObjectMeta.Annotations[KeepaliveAnnotation] = time.Now().Format(time.RFC3339)
-		hasUpdate = true
-	}
-
-	if hasUpdate {
-		return r.Update(ctx, adminer)
+		return retryUpdateOnConflict(ctx, r.Client, adminer, func() {
+			if adminer.ObjectMeta.Annotations == nil {
+				adminer.ObjectMeta.Annotations = make(map[string]string)
+			}
+			adminer.ObjectMeta.Annotations[KeepaliveAnnotation] = time.Now().Format(time.RFC3339)
+		})
 	}
 
 	return nil

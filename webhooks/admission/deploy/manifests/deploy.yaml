@@ -383,17 +383,18 @@ spec:
         - --metrics-bind-address=127.0.0.1:8080
         - --leader-elect
         - --ingress-mutating-annotations='{{ .ingressMutateAnnotations }}'
-        - --domains={{ .cloudDomain }}
         command:
         - /manager
         env:
+        - name: DOMAIN
+          value: '{{ .cloudDomain }}'
         - name: ICP_ENABLED
           value: '{{ .icpEnabled }}'
         - name: ICP_ENDPOINT
           value: '{{ .icpEndpoint }}'
         - name: ICP_KEY
           value: '{{ .icpKey }}'
-        image: ghcr.io/labring/sealos-admission-controller:latest
+        image: admission-webhook:latest
         livenessProbe:
           httpGet:
             path: /healthz
@@ -454,18 +455,6 @@ spec:
         runAsNonRoot: true
       serviceAccountName: admission-controller-manager
       terminationGracePeriodSeconds: 10
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: "control-plane"
-                  operator: In
-                  values:
-                  - controller-manager
-              topologyKey: "kubernetes.io/hostname"
       volumes:
       - name: cert
         secret:
@@ -525,7 +514,6 @@ metadata:
     sealos.io/component: admission-controller-manager
   name: admission-mutating-webhook-configuration
 webhooks:
-{{ if .ingressWebhookEnabled }}
 - admissionReviewVersions:
   - v1
   clientConfig:
@@ -533,12 +521,8 @@ webhooks:
       name: admission-webhook-service
       namespace: sealos-system
       path: /mutate-networking-k8s-io-v1-ingress
-  failurePolicy: {{ .ingressWebhookFailurePolicy }}
+  failurePolicy: Ignore
   name: mingress.sealos.io
-  namespaceSelector:
-    matchExpressions:
-      - key: user.sealos.io/owner
-        operator: Exists
   rules:
   - apiGroups:
     - networking.k8s.io
@@ -550,8 +534,6 @@ webhooks:
     resources:
     - ingresses
   sideEffects: None
-{{ end }}
-{{ if .namespaceWebhookEnabled }}
 - admissionReviewVersions:
   - v1
   clientConfig:
@@ -559,12 +541,8 @@ webhooks:
       name: admission-webhook-service
       namespace: sealos-system
       path: /mutate--v1-namespace
-  failurePolicy: {{ .namespaceWebhookFailurePolicy }}
+  failurePolicy: Ignore
   name: mnamespace.sealos.io
-  namespaceSelector:
-    matchExpressions:
-      - key: user.sealos.io/owner
-        operator: Exists
   rules:
   - apiGroups:
     - ""
@@ -576,8 +554,6 @@ webhooks:
     resources:
     - namespaces
   sideEffects: None
-{{ end }}
-{{ if .istioWebhookEnabled }}
 - admissionReviewVersions:
   - v1
   clientConfig:
@@ -585,12 +561,8 @@ webhooks:
       name: admission-webhook-service
       namespace: sealos-system
       path: /mutate-networking-istio-io-v1beta1-virtualservice
-  failurePolicy: {{ .virtualServiceWebhookFailurePolicy }}
+  failurePolicy: Ignore
   name: mvirtualservice.sealos.io
-  namespaceSelector:
-    matchExpressions:
-      - key: user.sealos.io/owner
-        operator: Exists
   rules:
   - apiGroups:
     - networking.istio.io
@@ -602,7 +574,6 @@ webhooks:
     resources:
     - virtualservices
   sideEffects: None
-{{ end }}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
@@ -619,7 +590,6 @@ metadata:
     sealos.io/component: admission-controller-manager
   name: admission-validating-webhook-configuration
 webhooks:
-{{ if .ingressWebhookEnabled }}
 - admissionReviewVersions:
   - v1
   clientConfig:
@@ -627,12 +597,8 @@ webhooks:
       name: admission-webhook-service
       namespace: sealos-system
       path: /validate-networking-k8s-io-v1-ingress
-  failurePolicy: {{ .ingressWebhookFailurePolicy }}
+  failurePolicy: Ignore
   name: vingress.sealos.io
-  namespaceSelector:
-    matchExpressions:
-      - key: user.sealos.io/owner
-        operator: Exists
   rules:
   - apiGroups:
     - networking.k8s.io
@@ -645,8 +611,6 @@ webhooks:
     resources:
     - ingresses
   sideEffects: None
-{{ end }}
-{{ if .namespaceWebhookEnabled }}
 - admissionReviewVersions:
   - v1
   clientConfig:
@@ -654,12 +618,8 @@ webhooks:
       name: admission-webhook-service
       namespace: sealos-system
       path: /validate--v1-namespace
-  failurePolicy: {{ .namespaceWebhookFailurePolicy }}
+  failurePolicy: Ignore
   name: vnamespace.sealos.io
-  namespaceSelector:
-    matchExpressions:
-      - key: user.sealos.io/owner
-        operator: Exists
   rules:
   - apiGroups:
     - ""
@@ -672,8 +632,6 @@ webhooks:
     resources:
     - namespaces
   sideEffects: None
-{{ end }}
-{{ if .istioWebhookEnabled }}
 - admissionReviewVersions:
   - v1
   clientConfig:
@@ -681,12 +639,8 @@ webhooks:
       name: admission-webhook-service
       namespace: sealos-system
       path: /validate-networking-istio-io-v1beta1-virtualservice
-  failurePolicy: {{ .virtualServiceWebhookFailurePolicy }}
+  failurePolicy: Ignore
   name: vvirtualservice.sealos.io
-  namespaceSelector:
-    matchExpressions:
-      - key: user.sealos.io/owner
-        operator: Exists
   rules:
   - apiGroups:
     - networking.istio.io
@@ -699,4 +653,3 @@ webhooks:
     resources:
     - virtualservices
   sideEffects: None
-{{ end }}

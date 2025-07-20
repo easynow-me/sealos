@@ -31,6 +31,7 @@ import (
 var nlog = logf.Log.WithName("namespace-validating-webhook")
 
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=namespaces/status,verbs=get;update;patch
 //+kubebuilder:webhook:path=/mutate--v1-namespace,mutating=true,failurePolicy=ignore,sideEffects=None,groups=core,resources=namespaces,verbs=create;update,versions=v1,name=mnamespace.sealos.io,admissionReviewVersions=v1
 
 //+kubebuilder:object:generate=false

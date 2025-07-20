@@ -36,6 +36,12 @@ import (
 	//+kubebuilder:scaffold:imports
 )
 
+//+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
+//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=validatingadmissionconfigurations,verbs=get;list;watch
+//+kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingadmissionconfigurations,verbs=get;list;watch
+
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
