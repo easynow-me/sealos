@@ -31,6 +31,7 @@ type NamespaceQuotaReconciler struct {
 	limitExpansionCycle time.Duration
 	Recorder            record.EventRecorder
 	namespaceLocks      map[string]*sync.Mutex
+	locksMutex          sync.RWMutex
 }
 
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
@@ -42,13 +43,12 @@ func (r *NamespaceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	evt := &corev1.Event{}
 	if err := r.Get(ctx, req.NamespacedName, evt); err == nil {
 		if strings.Contains(evt.Message, "exceeded quota") && (evt.Reason == "FailedCreate" || evt.Reason == "Devbox is exceeded quota") {
-			// lock
-			if r.namespaceLocks[evt.Namespace] == nil {
-				r.namespaceLocks[evt.Namespace] = &sync.Mutex{}
-			}
+			// Get or create namespace lock safely
+			lock := r.getOrCreateNamespaceLock(evt.Namespace)
+			
 			// Try to acquire the lock
-			if r.namespaceLocks[evt.Namespace].TryLock() {
-				defer r.namespaceLocks[evt.Namespace].Unlock()
+			if lock.TryLock() {
+				defer lock.Unlock()
 			} else {
 				r.Logger.Info("Namespace is already being processed", "namespace", evt.Namespace)
 				return ctrl.Result{}, nil
@@ -62,6 +62,31 @@ func (r *NamespaceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// getOrCreateNamespaceLock safely gets or creates a mutex for the given namespace
+func (r *NamespaceQuotaReconciler) getOrCreateNamespaceLock(namespace string) *sync.Mutex {
+	// First, try to get the lock with read lock
+	r.locksMutex.RLock()
+	if lock, exists := r.namespaceLocks[namespace]; exists {
+		r.locksMutex.RUnlock()
+		return lock
+	}
+	r.locksMutex.RUnlock()
+	
+	// If lock doesn't exist, acquire write lock and create it
+	r.locksMutex.Lock()
+	defer r.locksMutex.Unlock()
+	
+	// Check again in case another goroutine created it
+	if lock, exists := r.namespaceLocks[namespace]; exists {
+		return lock
+	}
+	
+	// Create new lock
+	newLock := &sync.Mutex{}
+	r.namespaceLocks[namespace] = newLock
+	return newLock
 }
 
 // handleQuotaExceeded increases quota by 50% if not already increased
@@ -266,7 +291,7 @@ func (r *NamespaceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 		// Fetch the namespace object to check annotations
 		var ns corev1.Namespace
-		if err := mgr.GetClient().Get(context.Background(), client.ObjectKey{Name: nsName}, &ns); err != nil {
+		if err := mgr.GetClient().Get(context.TODO(), client.ObjectKey{Name: nsName}, &ns); err != nil {
 			r.Logger.Error(err, "Failed to fetch namespace", "namespace", nsName)
 			return false
 		}

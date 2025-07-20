@@ -146,8 +146,8 @@ func QueryPrometheus(host, bucketName, instance string, startTime, endTime time.
 	}
 
 	if rcvdValues[0] <= 0 || rcvdValues[1] <= 0 {
-		fmt.Println("[Warning] The metrics retrieved by vector-metrics are less than or equal to 0.", "bucket:", bucketName)
-		fmt.Printf("received bytes: {startTime: {time: %v, value: %v}, endTime: {time: %v, value: %v}}\n", startTime.Format(timeFormat), rcvdValues[0], endTime.Format(timeFormat), rcvdValues[1])
+		// Warning: The metrics retrieved by vector-metrics are less than or equal to 0 for bucket: bucketName
+		// received bytes: startTime and endTime values are invalid
 		return 0, nil
 	}
 
@@ -158,17 +158,17 @@ func QueryPrometheus(host, bucketName, instance string, startTime, endTime time.
 	}
 
 	if sentValues[0] <= 0 || sentValues[1] <= 0 {
-		fmt.Println("[Warning] The metrics retrieved by vector-metrics are less than or equal to 0.", "bucket:", bucketName)
-		fmt.Printf("sent bytes: {startTime: {time: %v, value: %v}, endTime: {time: %v, value: %v}}\n", startTime.Format(timeFormat), sentValues[0], endTime.Format(timeFormat), sentValues[1])
+		// Warning: The metrics retrieved by vector-metrics are less than or equal to 0 for bucket: bucketName
+		// sent bytes: startTime and endTime values are invalid
 		return 0, nil
 	}
 
 	receivedDiff := rcvdValues[1] - rcvdValues[0]
 	sentDiff := sentValues[1] - sentValues[0]
 
-	fmt.Printf("bucket: %v, received bytes in duration: %v, sent bytes in duration: %v\n", bucketName, receivedDiff, sentDiff)
-	fmt.Printf("received bytes: {startTime: {time: %v, value: %v}, endTime: {time: %v, value: %v}}\n", startTime.Format(timeFormat), rcvdValues[0], endTime.Format(timeFormat), rcvdValues[1])
-	fmt.Printf("sent bytes: {startTime: {time: %v, value: %v}, endTime: {time: %v, value: %v}}\n", startTime.Format(timeFormat), sentValues[0], endTime.Format(timeFormat), sentValues[1])
+	// Debug info: bucket traffic metrics calculated successfully
+	// Received bytes in duration: receivedDiff, sent bytes in duration: sentDiff
+	// Metric values captured for time range
 
 	return rcvdValues[1] + sentValues[1] - rcvdValues[0] - sentValues[0], nil
 }

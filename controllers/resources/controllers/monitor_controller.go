@@ -201,7 +201,7 @@ func (r *MonitorReconciler) getNamespaceList() (*corev1.NamespaceList, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create label requirement: %v", err)
 	}
-	return namespaceList, r.List(context.Background(), namespaceList, &client.ListOptions{
+	return namespaceList, r.List(context.TODO(), namespaceList, &client.ListOptions{
 		LabelSelector: labels.NewSelector().Add(*req),
 	})
 }
@@ -302,8 +302,8 @@ func (r *MonitorReconciler) processNamespaceList(namespaceList *corev1.Namespace
 	for i := range namespaceList.Items {
 		go func(namespace *corev1.Namespace) {
 			defer wg.Done()
-			if err := sem.Acquire(context.Background(), 1); err != nil {
-				fmt.Printf("Failed to acquire semaphore: %v\n", err)
+			if err := sem.Acquire(context.TODO(), 1); err != nil {
+				r.Logger.Error(err, "Failed to acquire semaphore", "namespace", namespace.Name)
 				return
 			}
 			defer sem.Release(1)
@@ -408,14 +408,14 @@ func (r *MonitorReconciler) monitorResourceUsage(namespace *corev1.Namespace) er
 			ParentName: resNamed[name].ParentName(),
 		})
 	}
-	return r.DBClient.InsertMonitor(context.Background(), monitors...)
+	return r.DBClient.InsertMonitor(context.TODO(), monitors...)
 }
 
 func (r *MonitorReconciler) getInstances(namespace string) (map[string]struct{}, error) {
 	instances := make(map[string]struct{})
 	insList := metav1.PartialObjectMetadataList{}
 	insList.SetGroupVersionKind(appv1.GroupVersion.WithKind("InstanceList"))
-	if err := r.List(context.Background(), &insList, client.InNamespace(namespace)); err != nil {
+	if err := r.List(context.TODO(), &insList, client.InNamespace(namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list instances: %v", err)
 	}
 	for i := range insList.Items {
@@ -430,7 +430,7 @@ func (r *MonitorReconciler) getInstances(namespace string) (map[string]struct{},
 
 func (r *MonitorReconciler) monitorPodResourceUsage(namespace string, resUsed map[string]map[corev1.ResourceName]*quantity, resNamed map[string]*resources.ResourceNamed, instances map[string]struct{}) error {
 	podList := &corev1.PodList{}
-	if err := r.List(context.Background(), podList, &client.ListOptions{
+	if err := r.List(context.TODO(), podList, &client.ListOptions{
 		Namespace: namespace,
 	}); err != nil {
 		return fmt.Errorf("failed to list pods: %v", err)
@@ -476,7 +476,7 @@ func (r *MonitorReconciler) monitorPodResourceUsage(namespace string, resUsed ma
 
 func (r *MonitorReconciler) monitorPVCResourceUsage(namespace string, resUsed map[string]map[corev1.ResourceName]*quantity, resNamed map[string]*resources.ResourceNamed, instances map[string]struct{}) error {
 	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err := r.List(context.Background(), pvcList, &client.ListOptions{
+	if err := r.List(context.TODO(), pvcList, &client.ListOptions{
 		Namespace:     namespace,
 		FieldSelector: fields.OneTermEqualSelector("status.phase", string(corev1.ClaimBound)),
 	}); err != nil {
@@ -500,7 +500,7 @@ func (r *MonitorReconciler) monitorPVCResourceUsage(namespace string, resUsed ma
 
 func (r *MonitorReconciler) monitorDatabaseBackupUsage(namespace string, resUsed map[string]map[corev1.ResourceName]*quantity, resNamed map[string]*resources.ResourceNamed) error {
 	backupList := &kbv1alpha1.BackupList{}
-	if err := r.List(context.Background(), backupList, &client.ListOptions{
+	if err := r.List(context.TODO(), backupList, &client.ListOptions{
 		Namespace:     namespace,
 		FieldSelector: fields.OneTermEqualSelector("status.phase", string(kbv1alpha1.BackupPhaseCompleted)),
 	}); err != nil {
@@ -525,7 +525,7 @@ func (r *MonitorReconciler) monitorDatabaseBackupUsage(namespace string, resUsed
 // instance is the app instance name
 func (r *MonitorReconciler) monitorServiceResourceUsage(namespace string, resUsed map[string]map[corev1.ResourceName]*quantity, resNamed map[string]*resources.ResourceNamed, instances map[string]struct{}) error {
 	svcList := &corev1.ServiceList{}
-	if err := r.List(context.Background(), svcList, &client.ListOptions{
+	if err := r.List(context.TODO(), svcList, &client.ListOptions{
 		Namespace:     namespace,
 		FieldSelector: fields.OneTermEqualSelector("spec.type", string(corev1.ServiceTypeNodePort)),
 	}); err != nil {
@@ -653,7 +653,7 @@ func (r *MonitorReconciler) monitorObjectStorageTrafficUsed(startTime, endTime t
 		return fmt.Errorf("failed to get object storage buckets: %w", err)
 	}
 	r.Logger.Info("object storage buckets", "buckets len", len(buckets))
-	wg, _ := errgroup.WithContext(context.Background())
+	wg, _ := errgroup.WithContext(context.TODO())
 	wg.SetLimit(10)
 	for i := range buckets {
 		bucket := buckets[i]
@@ -688,7 +688,7 @@ func (r *MonitorReconciler) handlerObjectStorageTrafficUsed(startTime, endTime t
 		Type:     resources.AppType[resources.ObjectStorage],
 	}
 	r.Logger.Info("object storage traffic used", "monitor", ro)
-	err = r.DBClient.InsertMonitor(context.Background(), &ro)
+	err = r.DBClient.InsertMonitor(context.TODO(), &ro)
 	if err != nil {
 		return fmt.Errorf("failed to insert monitor: %w", err)
 	}
@@ -701,7 +701,7 @@ func (r *MonitorReconciler) monitorPodTrafficUsed(startTime, endTime time.Time) 
 		return fmt.Errorf("failed to get distinct monitor combinations: %w", err)
 	}
 	r.Logger.Info("distinct monitor combinations", "monitors len", len(monitors))
-	wg, _ := errgroup.WithContext(context.Background())
+	wg, _ := errgroup.WithContext(context.TODO())
 	wg.SetLimit(100)
 	for i := range monitors {
 		monitor := monitors[i]
@@ -730,7 +730,7 @@ func (r *MonitorReconciler) handlerTrafficUsed(startTime, endTime time.Time, mon
 		Time:     endTime.Add(-1 * time.Minute),
 		Type:     monitor.Type,
 	}
-	err = r.DBClient.InsertMonitor(context.Background(), &ro)
+	err = r.DBClient.InsertMonitor(context.TODO(), &ro)
 	if err != nil {
 		return fmt.Errorf("failed to insert monitor: %w", err)
 	}
