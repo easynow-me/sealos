@@ -227,7 +227,7 @@ func (c *certificateManager) createNewCertificate(ctx context.Context, domain st
 	// 构建 Certificate spec
 	spec := map[string]interface{}{
 		"secretName": secretName,
-		"dnsNames":   []string{domain},
+		"dnsNames":   []interface{}{domain},
 		"issuerRef": map[string]interface{}{
 			"name": "letsencrypt-prod",
 			"kind": "ClusterIssuer",
@@ -238,7 +238,7 @@ func (c *certificateManager) createNewCertificate(ctx context.Context, domain st
 
 	// 如果是通配符域名，添加通配符支持
 	if strings.HasPrefix(domain, "*.") {
-		spec["dnsNames"] = []string{domain, strings.TrimPrefix(domain, "*.")}
+		spec["dnsNames"] = []interface{}{domain, strings.TrimPrefix(domain, "*.")}
 	}
 
 	if err := unstructured.SetNestedMap(cert.Object, spec, "spec"); err != nil {

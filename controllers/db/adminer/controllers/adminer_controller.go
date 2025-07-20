@@ -145,6 +145,8 @@ type AdminerReconciler struct {
 //+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=cert-manager.io,resources=certificates/status,verbs=get;update;patch
 
 //-kubebuilder:rbac:groups=core,resources=endpoints,verbs=get;list;watch
 
