@@ -130,8 +130,9 @@ func (r *NamespaceQuotaReconciler) handleQuotaExceeded(ctx context.Context, evt 
 			r.Logger.Error(err, "failed to parse quota number", "namespace", ns)
 			num = 0
 		}
-		newQuota.Labels["auto-adapt-quota-num"] = strconv.Itoa(num + 1)
-		if err := r.Update(ctx, newQuota); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, newQuota, func() {
+			newQuota.Labels["auto-adapt-quota-num"] = strconv.Itoa(num + 1)
+		}); err != nil {
 			return fmt.Errorf("failed to update ResourceQuota %s: %w", newQuota.Name, err)
 		}
 		r.Logger.Info("Quota updated", "namespace", ns, "history count", num, "newQuota", newQuota.Spec.Hard)

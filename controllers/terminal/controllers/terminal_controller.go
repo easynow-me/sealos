@@ -25,11 +25,15 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -72,6 +76,46 @@ const (
 	SecretHeaderPrefix = "X-SEALOS-"
 )
 
+// retryUpdateOnConflict retries the update operation when there's a resource version conflict
+func retryUpdateOnConflict(ctx context.Context, c client.Client, obj client.Object, updateFunc func()) error {
+	return wait.PollImmediate(100*time.Millisecond, 3*time.Second, func() (bool, error) {
+		updateFunc()
+		err := c.Update(ctx, obj)
+		if err != nil {
+			if errors.IsConflict(err) {
+				// Resource version conflict, need to get the latest version and retry
+				key := client.ObjectKeyFromObject(obj)
+				if getErr := c.Get(ctx, key, obj); getErr != nil {
+					return false, getErr
+				}
+				return false, nil // Retry with updated object
+			}
+			return false, err // Other errors should not be retried
+		}
+		return true, nil // Success
+	})
+}
+
+// retryStatusUpdateOnConflict retries the status update operation when there's a resource version conflict
+func retryStatusUpdateOnConflict(ctx context.Context, c client.Client, obj client.Object, updateFunc func()) error {
+	return wait.PollImmediate(100*time.Millisecond, 3*time.Second, func() (bool, error) {
+		updateFunc()
+		err := c.Status().Update(ctx, obj)
+		if err != nil {
+			if errors.IsConflict(err) {
+				// Resource version conflict, need to get the latest version and retry
+				key := client.ObjectKeyFromObject(obj)
+				if getErr := c.Get(ctx, key, obj); getErr != nil {
+					return false, getErr
+				}
+				return false, nil // Retry with updated object
+			}
+			return false, err // Other errors should not be retried
+		}
+		return true, nil // Success
+	})
+}
+
 // TerminalReconciler reconciles a Terminal object
 type TerminalReconciler struct {
 	client.Client
@@ -91,8 +135,11 @@ type TerminalReconciler struct {
 //+kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules/status,verbs=get;update;patch
 
 func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx, "terminal", req.NamespacedName)
@@ -103,13 +150,17 @@ func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	if terminal.ObjectMeta.DeletionTimestamp.IsZero() {
 		if controllerutil.AddFinalizer(terminal, FinalizerName) {
-			if err := r.Update(ctx, terminal); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, terminal, func() {
+				controllerutil.AddFinalizer(terminal, FinalizerName)
+			}); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
 	} else {
 		if controllerutil.RemoveFinalizer(terminal, FinalizerName) {
-			if err := r.Update(ctx, terminal); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, terminal, func() {
+				controllerutil.RemoveFinalizer(terminal, FinalizerName)
+			}); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -129,15 +180,17 @@ func (r *TerminalReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	if terminal.Status.ServiceName == "" {
-		terminal.Status.ServiceName = terminal.Name + "-svc" + rand.String(5)
-		if err := r.Status().Update(ctx, terminal); err != nil {
+		if err := retryStatusUpdateOnConflict(ctx, r.Client, terminal, func() {
+			terminal.Status.ServiceName = terminal.Name + "-svc" + rand.String(5)
+		}); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
 	if terminal.Status.SecretHeader == "" {
-		terminal.Status.SecretHeader = r.generateSecretHeader()
-		if err := r.Status().Update(ctx, terminal); err != nil {
+		if err := retryStatusUpdateOnConflict(ctx, r.Client, terminal, func() {
+			terminal.Status.SecretHeader = r.generateSecretHeader()
+		}); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -205,8 +258,9 @@ func (r *TerminalReconciler) syncIstioNetworking(ctx context.Context, terminal *
 	host := hostname + "." + r.CtrConfig.Global.CloudDomain
 	domain := Protocol + host + r.getPort()
 	if terminal.Status.Domain != domain {
-		terminal.Status.Domain = domain
-		return r.Status().Update(ctx, terminal)
+		return retryStatusUpdateOnConflict(ctx, r.Client, terminal, func() {
+			terminal.Status.Domain = domain
+		})
 	}
 	
 	return nil
@@ -232,8 +286,9 @@ func (r *TerminalReconciler) syncNginxIngress(ctx context.Context, terminal *ter
 
 	domain := Protocol + host + r.getPort()
 	if terminal.Status.Domain != domain {
-		terminal.Status.Domain = domain
-		return r.Status().Update(ctx, terminal)
+		return retryStatusUpdateOnConflict(ctx, r.Client, terminal, func() {
+			terminal.Status.Domain = domain
+		})
 	}
 
 	return nil
@@ -379,8 +434,9 @@ func (r *TerminalReconciler) syncDeployment(ctx context.Context, terminal *termi
 	}
 
 	if terminal.Status.AvailableReplicas != deployment.Status.AvailableReplicas {
-		terminal.Status.AvailableReplicas = deployment.Status.AvailableReplicas
-		return r.Status().Update(ctx, terminal)
+		return retryStatusUpdateOnConflict(ctx, r.Client, terminal, func() {
+			terminal.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+		})
 	}
 
 	return nil
@@ -399,7 +455,12 @@ func (r *TerminalReconciler) fillDefaultValue(ctx context.Context, terminal *ter
 	}
 
 	if hasUpdate {
-		return r.Update(ctx, terminal)
+		return retryUpdateOnConflict(ctx, r.Client, terminal, func() {
+			if terminal.ObjectMeta.Annotations == nil {
+				terminal.ObjectMeta.Annotations = make(map[string]string)
+			}
+			terminal.ObjectMeta.Annotations[KeepaliveAnnotation] = time.Now().Format(time.RFC3339)
+		})
 	}
 
 	return nil
@@ -433,10 +494,41 @@ func (r *TerminalReconciler) generateSecretHeader() string {
 func (r *TerminalReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor("sealos-terminal-controller")
 	r.Config = mgr.GetConfig()
-	return ctrl.NewControllerManagedBy(mgr).
+	
+	// 初始化 Istio 支持
+	ctx := context.Background()
+	if err := r.SetupIstioSupport(ctx); err != nil {
+		r.recorder.Eventf(&terminalv1.Terminal{}, corev1.EventTypeWarning, "IstioSetupFailed", "Failed to setup Istio support: %v", err)
+		// 不返回错误，继续使用 Ingress 模式
+	}
+	
+	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&terminalv1.Terminal{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.Deployment{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Owns(&corev1.Service{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Complete(r)
+		Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{}))
+	
+	// 如果启用了 Istio，添加对 Istio 资源的监听
+	if r.useIstio {
+		// 使用 unstructured 类型来监听 Istio CRDs
+		virtualServiceType := &unstructured.Unstructured{}
+		virtualServiceType.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "networking.istio.io",
+			Version: "v1beta1",
+			Kind:    "VirtualService",
+		})
+		
+		gatewayType := &unstructured.Unstructured{}
+		gatewayType.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "networking.istio.io",
+			Version: "v1beta1",
+			Kind:    "Gateway",
+		})
+		
+		controllerBuilder = controllerBuilder.
+			Owns(virtualServiceType).
+			Owns(gatewayType)
+	}
+	
+	return controllerBuilder.Complete(r)
 }

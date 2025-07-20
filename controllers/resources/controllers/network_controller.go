@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"time"
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -62,10 +64,34 @@ const (
 	True    = "true"
 )
 
+// retryUpdateOnConflict retries the update operation when there's a resource version conflict
+func retryUpdateOnConflict(ctx context.Context, c client.Client, obj client.Object, updateFunc func()) error {
+	return wait.PollImmediate(100*time.Millisecond, 3*time.Second, func() (bool, error) {
+		updateFunc()
+		err := c.Update(ctx, obj)
+		if err != nil {
+			if errors.IsConflict(err) {
+				// Resource version conflict, need to get the latest version and retry
+				key := client.ObjectKeyFromObject(obj)
+				if getErr := c.Get(ctx, key, obj); getErr != nil {
+					return false, getErr
+				}
+				return false, nil // Retry with updated object
+			}
+			return false, err // Other errors should not be retried
+		}
+		return true, nil // Success
+	})
+}
+
 //+kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=virtualservices/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=gateways/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=networking.istio.io,resources=destinationrules/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;update;patch
 
 func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -133,8 +159,9 @@ func (r *NetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if ns.Annotations == nil {
 			ns.Annotations = make(map[string]string)
 		}
-		ns.Annotations[NetworkStatusAnnoKey] = NetworkResumeCompleted
-		if err := r.Client.Update(ctx, &ns); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &ns, func() {
+			ns.Annotations[NetworkStatusAnnoKey] = NetworkResumeCompleted
+		}); err != nil {
 			logger.Error(err, "failed to update namespace network status to ResumeCompleted")
 			return ctrl.Result{}, err
 		}
@@ -167,8 +194,9 @@ func (r *NetworkReconciler) handleIngressResource(ctx context.Context, key clien
 			ingress.Annotations = make(map[string]string)
 		}
 		if ingress.Annotations[IngressClassKey] != Disable {
-			ingress.Annotations[IngressClassKey] = Disable
-			if err := r.Client.Update(ctx, &ingress); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, &ingress, func() {
+				ingress.Annotations[IngressClassKey] = Disable
+			}); err != nil {
 				return fmt.Errorf("failed to suspend ingress %s: %w", key.Name, err)
 			}
 			r.Log.V(1).Info("Suspended ingress", "name", key.Name)
@@ -185,9 +213,10 @@ func (r *NetworkReconciler) handleIngressResource(ctx context.Context, key clien
 			if svc.Labels == nil {
 				svc.Labels = make(map[string]string)
 			}
-			svc.Labels[NodePortLabelKey] = True
-			svc.Spec.Type = corev1.ServiceTypeClusterIP
-			if err := r.Client.Update(ctx, &svc); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, &svc, func() {
+				svc.Labels[NodePortLabelKey] = True
+				svc.Spec.Type = corev1.ServiceTypeClusterIP
+			}); err != nil {
 				return fmt.Errorf("failed to suspend service %s: %w", key.Name, err)
 			}
 			r.Log.V(1).Info("Suspended service", "name", key.Name)
@@ -252,9 +281,9 @@ func (r *NetworkReconciler) handleIstioResource(ctx context.Context, key client.
 			},
 		}
 		
-		unstructured.SetNestedSlice(vs.Object, suspendRoute, "spec", "http")
-		
-		if err := r.Client.Update(ctx, vs); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, vs, func() {
+			unstructured.SetNestedSlice(vs.Object, suspendRoute, "spec", "http")
+		}); err != nil {
 			return fmt.Errorf("failed to suspend virtual service %s: %w", key.Name, err)
 		}
 		r.Log.V(1).Info("Suspended virtual service", "name", key.Name)
@@ -270,9 +299,10 @@ func (r *NetworkReconciler) handleIstioResource(ctx context.Context, key client.
 			if svc.Labels == nil {
 				svc.Labels = make(map[string]string)
 			}
-			svc.Labels[NodePortLabelKey] = True
-			svc.Spec.Type = corev1.ServiceTypeClusterIP
-			if err := r.Client.Update(ctx, &svc); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, &svc, func() {
+				svc.Labels[NodePortLabelKey] = True
+				svc.Spec.Type = corev1.ServiceTypeClusterIP
+			}); err != nil {
 				return fmt.Errorf("failed to suspend service %s: %w", key.Name, err)
 			}
 			r.Log.V(1).Info("Suspended service", "name", key.Name)
@@ -305,8 +335,9 @@ func (r *NetworkReconciler) suspendIngressResources(ctx context.Context, namespa
 			ingress.Annotations = make(map[string]string)
 		}
 		if ingress.Annotations[IngressClassKey] != Disable {
-			ingress.Annotations[IngressClassKey] = Disable
-			if err := r.Client.Update(ctx, &ingress); err != nil {
+			if err := retryUpdateOnConflict(ctx, r.Client, &ingress, func() {
+				ingress.Annotations[IngressClassKey] = Disable
+			}); err != nil {
 				return fmt.Errorf("failed to suspend ingress %s: %w", ingress.Name, err)
 			}
 			r.Log.V(1).Info("Suspended ingress", "name", ingress.Name)
@@ -325,9 +356,10 @@ func (r *NetworkReconciler) suspendIngressResources(ctx context.Context, namespa
 		if svc.Labels == nil {
 			svc.Labels = make(map[string]string)
 		}
-		svc.Labels[NodePortLabelKey] = True
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
-		if err := r.Client.Update(ctx, &svc); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &svc, func() {
+			svc.Labels[NodePortLabelKey] = True
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}); err != nil {
 			return fmt.Errorf("failed to suspend service %s: %w", svc.Name, err)
 		}
 		r.Log.V(1).Info("Suspended service", "name", svc.Name)
@@ -355,8 +387,9 @@ func (r *NetworkReconciler) resumeIngressResources(ctx context.Context, namespac
 		if ingress.Annotations == nil || ingress.Annotations[IngressClassKey] != Disable {
 			continue
 		}
-		ingress.Annotations[IngressClassKey] = "nginx"
-		if err := r.Client.Update(ctx, &ingress); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &ingress, func() {
+			ingress.Annotations[IngressClassKey] = "nginx"
+		}); err != nil {
 			return fmt.Errorf("failed to resume ingress %s: %w", ingress.Name, err)
 		}
 		r.Log.V(1).Info("Resumed ingress", "name", ingress.Name)
@@ -371,9 +404,10 @@ func (r *NetworkReconciler) resumeIngressResources(ctx context.Context, namespac
 		if svc.Labels == nil || svc.Labels[NodePortLabelKey] != True {
 			continue
 		}
-		svc.Spec.Type = corev1.ServiceTypeNodePort
-		delete(svc.Labels, NodePortLabelKey)
-		if err := r.Client.Update(ctx, &svc); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &svc, func() {
+			svc.Spec.Type = corev1.ServiceTypeNodePort
+			delete(svc.Labels, NodePortLabelKey)
+		}); err != nil {
 			return fmt.Errorf("failed to resume service %s: %w", svc.Name, err)
 		}
 		r.Log.V(1).Info("Resumed service", "name", svc.Name)
@@ -442,9 +476,9 @@ func (r *NetworkReconciler) suspendIstioResources(ctx context.Context, namespace
 			},
 		}
 		
-		unstructured.SetNestedSlice(vs.Object, suspendRoute, "spec", "http")
-		
-		if err := r.Client.Update(ctx, &vs); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &vs, func() {
+			unstructured.SetNestedSlice(vs.Object, suspendRoute, "spec", "http")
+		}); err != nil {
 			return fmt.Errorf("failed to suspend virtual service %s: %w", vs.GetName(), err)
 		}
 		r.Log.V(1).Info("Suspended virtual service", "name", vs.GetName())
@@ -462,9 +496,10 @@ func (r *NetworkReconciler) suspendIstioResources(ctx context.Context, namespace
 		if svc.Labels == nil {
 			svc.Labels = make(map[string]string)
 		}
-		svc.Labels[NodePortLabelKey] = True
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
-		if err := r.Client.Update(ctx, &svc); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &svc, func() {
+			svc.Labels[NodePortLabelKey] = True
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}); err != nil {
 			return fmt.Errorf("failed to suspend service %s: %w", svc.Name, err)
 		}
 		r.Log.V(1).Info("Suspended service", "name", svc.Name)
@@ -502,10 +537,10 @@ func (r *NetworkReconciler) resumeIstioResources(ctx context.Context, namespace 
 		}
 		
 		// 移除暂停注解
-		delete(annotations, "network.sealos.io/suspended")
-		vs.SetAnnotations(annotations)
-		
-		if err := r.Client.Update(ctx, &vs); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &vs, func() {
+			delete(annotations, "network.sealos.io/suspended")
+			vs.SetAnnotations(annotations)
+		}); err != nil {
 			return fmt.Errorf("failed to resume virtual service %s: %w", vs.GetName(), err)
 		}
 		r.Log.V(1).Info("Resumed virtual service", "name", vs.GetName())
@@ -520,9 +555,10 @@ func (r *NetworkReconciler) resumeIstioResources(ctx context.Context, namespace 
 		if svc.Labels == nil || svc.Labels[NodePortLabelKey] != True {
 			continue
 		}
-		svc.Spec.Type = corev1.ServiceTypeNodePort
-		delete(svc.Labels, NodePortLabelKey)
-		if err := r.Client.Update(ctx, &svc); err != nil {
+		if err := retryUpdateOnConflict(ctx, r.Client, &svc, func() {
+			svc.Spec.Type = corev1.ServiceTypeNodePort
+			delete(svc.Labels, NodePortLabelKey)
+		}); err != nil {
 			return fmt.Errorf("failed to resume service %s: %w", svc.Name, err)
 		}
 		r.Log.V(1).Info("Resumed service", "name", svc.Name)
