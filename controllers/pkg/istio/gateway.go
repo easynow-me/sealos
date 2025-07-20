@@ -372,3 +372,12 @@ func (g *gatewayController) CreateOrUpdate(ctx context.Context, config *GatewayC
 
 	return nil
 }
+
+// stringSliceToInterface converts []string to []interface{} for unstructured objects
+func stringSliceToInterface(strings []string) []interface{} {
+	result := make([]interface{}, len(strings))
+	for i, s := range strings {
+		result[i] = s
+	}
+	return result
+}

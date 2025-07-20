@@ -336,7 +336,7 @@ func (v *virtualServiceController) buildCorsPolicy(cors *CorsPolicy) map[string]
 		policy["allowHeaders"] = stringSliceToInterface(cors.AllowHeaders)
 	}
 
-	policy["allowCredentials"] = cors.AllowCredentials
+	policy["allowCredentials"] = interface{}(cors.AllowCredentials)
 
 	if cors.MaxAge != nil {
 		policy["maxAge"] = cors.MaxAge.String()
@@ -586,13 +586,4 @@ func (v *virtualServiceController) CreateOrUpdate(ctx context.Context, config *V
 	}
 
 	return nil
-}
-
-// stringSliceToInterface converts []string to []interface{} for unstructured objects
-func stringSliceToInterface(strings []string) []interface{} {
-	result := make([]interface{}, len(strings))
-	for i, s := range strings {
-		result[i] = s
-	}
-	return result
 }
