@@ -71,7 +71,9 @@ func (g *gatewayController) Create(ctx context.Context, config *GatewayConfig) e
 
 	// 构建 Gateway spec
 	spec := g.buildGatewaySpec(config)
-	if err := unstructured.SetNestedMap(gateway.Object, spec, "spec"); err != nil {
+	// 确保所有值都可以深拷贝
+	safeSpec := makeSafeForDeepCopy(spec)
+	if err := unstructured.SetNestedMap(gateway.Object, safeSpec.(map[string]interface{}), "spec"); err != nil {
 		return fmt.Errorf("failed to set gateway spec: %w", err)
 	}
 
@@ -93,7 +95,9 @@ func (g *gatewayController) Update(ctx context.Context, config *GatewayConfig) e
 
 	// 更新 spec
 	spec := g.buildGatewaySpec(config)
-	if err := unstructured.SetNestedMap(gateway.Object, spec, "spec"); err != nil {
+	// 确保所有值都可以深拷贝
+	safeSpec := makeSafeForDeepCopy(spec)
+	if err := unstructured.SetNestedMap(gateway.Object, safeSpec.(map[string]interface{}), "spec"); err != nil {
 		return fmt.Errorf("failed to set gateway spec: %w", err)
 	}
 
@@ -348,7 +352,9 @@ func (g *gatewayController) CreateOrUpdate(ctx context.Context, config *GatewayC
 
 		// 构建并设置 spec
 		spec := g.buildGatewaySpec(config)
-		if err := unstructured.SetNestedMap(gateway.Object, spec, "spec"); err != nil {
+		// 确保所有值都可以深拷贝
+		safeSpec := makeSafeForDeepCopy(spec)
+		if err := unstructured.SetNestedMap(gateway.Object, safeSpec.(map[string]interface{}), "spec"); err != nil {
 			return fmt.Errorf("failed to set gateway spec: %w", err)
 		}
 
@@ -380,4 +386,45 @@ func stringSliceToInterface(strings []string) []interface{} {
 		result[i] = s
 	}
 	return result
+}
+
+// makeSafeForDeepCopy recursively converts all values in a map to ensure they can be deep copied
+func makeSafeForDeepCopy(obj interface{}) interface{} {
+	switch v := obj.(type) {
+	case map[string]interface{}:
+		result := make(map[string]interface{})
+		for k, val := range v {
+			result[k] = makeSafeForDeepCopy(val)
+		}
+		return result
+	case []interface{}:
+		result := make([]interface{}, len(v))
+		for i, val := range v {
+			result[i] = makeSafeForDeepCopy(val)
+		}
+		return result
+	case []string:
+		return stringSliceToInterface(v)
+	case int:
+		return interface{}(v)
+	case int32:
+		return interface{}(v)
+	case int64:
+		return interface{}(v)
+	case uint:
+		return interface{}(v)
+	case uint32:
+		return interface{}(v)
+	case uint64:
+		return interface{}(v)
+	case float32:
+		return interface{}(v)
+	case float64:
+		return interface{}(v)
+	case bool:
+		return interface{}(v)
+	default:
+		// string and other types should be fine as-is
+		return v
+	}
 }
