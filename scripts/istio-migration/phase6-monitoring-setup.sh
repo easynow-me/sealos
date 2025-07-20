@@ -16,6 +16,31 @@ MONITORING_NAMESPACE="sealos-monitoring"
 ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
 ALERT_EMAIL="${ALERT_EMAIL:-}"
 
+# Help function
+show_help() {
+    cat << EOF
+Phase 6: 24/7 Monitoring Setup Script
+
+Usage: $0 [OPTIONS]
+
+Options:
+    --component COMPONENT   Setup specific monitoring component (all, metrics, alerts, dashboard)
+    --webhook-url URL      Webhook URL for alerts (e.g., Slack, DingTalk)
+    --alert-email EMAIL    Email address for critical alerts
+    --dry-run              Show what would be done without making changes
+    --help                 Show this help message
+
+Components:
+    metrics     Setup Prometheus metrics collection
+    alerts      Configure AlertManager rules
+    dashboard   Deploy Grafana dashboards
+    all         Setup all components
+
+Example:
+    $0 --component all --webhook-url https://hooks.slack.com/xxx --alert-email ops@example.com
+EOF
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -46,30 +71,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-show_help() {
-    cat << EOF
-Phase 6: 24/7 Monitoring Setup Script
-
-Usage: $0 [OPTIONS]
-
-Options:
-    --component COMPONENT   Setup specific monitoring component (all, metrics, alerts, dashboard)
-    --webhook-url URL      Webhook URL for alerts (e.g., Slack, DingTalk)
-    --alert-email EMAIL    Email address for critical alerts
-    --dry-run              Show what would be done without making changes
-    --help                 Show this help message
-
-Components:
-    metrics     Setup Prometheus metrics collection
-    alerts      Configure AlertManager rules
-    dashboard   Deploy Grafana dashboards
-    all         Setup all components
-
-Example:
-    $0 --component all --webhook-url https://hooks.slack.com/xxx --alert-email ops@example.com
-EOF
-}
 
 # Setup Prometheus metrics collection
 setup_metrics_collection() {

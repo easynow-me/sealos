@@ -31,7 +31,10 @@
       "Bash(go vet:*)",
       "Bash(go mod:*)",
       "Bash(go doc:*)",
-      "Bash(make:*)"
+      "Bash(make:*)",
+      "Bash(bash:*)",
+      "Bash(./phase6-monitoring-setup.sh:*)",
+      "Bash(./phase6-full-cutover.sh:*)"
     ],
     "deny": []
   }

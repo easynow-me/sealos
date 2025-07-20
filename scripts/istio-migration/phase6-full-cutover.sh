@@ -16,6 +16,31 @@ STEP="all"
 BACKUP_DIR="/tmp/sealos-istio-backup-$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="/tmp/phase6-cutover-$(date +%Y%m%d-%H%M%S).log"
 
+# Help function
+show_help() {
+    cat << EOF
+Phase 6: Full Production Cutover Script
+
+Usage: $0 [OPTIONS]
+
+Options:
+    --step STEP     Execute specific step (all, disable-ingress, migrate-existing, validate, cleanup)
+    --dry-run       Show what would be done without making changes
+    --force         Skip confirmation prompts
+    --help          Show this help message
+
+Steps:
+    disable-ingress   Disable new Ingress creation
+    migrate-existing  Migrate all existing Ingress to Istio
+    validate         Validate all functionality
+    cleanup          Clean up old resources
+
+Example:
+    $0 --step disable-ingress --dry-run
+    $0 --step all --force
+EOF
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -42,30 +67,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-show_help() {
-    cat << EOF
-Phase 6: Full Production Cutover Script
-
-Usage: $0 [OPTIONS]
-
-Options:
-    --step STEP     Execute specific step (all, disable-ingress, migrate-existing, validate, cleanup)
-    --dry-run       Show what would be done without making changes
-    --force         Skip confirmation prompts
-    --help          Show this help message
-
-Steps:
-    disable-ingress   Disable new Ingress creation
-    migrate-existing  Migrate all existing Ingress to Istio
-    validate         Validate all functionality
-    cleanup          Clean up old resources
-
-Example:
-    $0 --step disable-ingress --dry-run
-    $0 --step all --force
-EOF
-}
 
 # Logging function
 log() {
