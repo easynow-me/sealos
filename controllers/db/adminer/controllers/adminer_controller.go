@@ -27,8 +27,8 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -480,7 +480,7 @@ func (r *AdminerReconciler) syncNetworking(ctx context.Context, adminer *adminer
 	if r.useIstio && r.istioReconciler != nil {
 		return r.syncIstioNetworking(ctx, adminer, hostname, recLabels)
 	}
-	
+
 	// 回退到原有的 Ingress 模式
 	return r.syncIngress(ctx, adminer, hostname, recLabels)
 }
@@ -500,7 +500,7 @@ func (r *AdminerReconciler) syncIstioNetworking(ctx context.Context, adminer *ad
 	if err := r.istioReconciler.SyncIstioNetworking(ctx, adminer, hostname); err != nil {
 		return err
 	}
-	
+
 	// 更新 Adminer 状态中的域名
 	host := hostname + "." + r.adminerDomain
 	var protocol string
@@ -515,7 +515,7 @@ func (r *AdminerReconciler) syncIstioNetworking(ctx context.Context, adminer *ad
 			adminer.Status.Domain = domain
 		})
 	}
-	
+
 	return nil
 }
 
@@ -627,18 +627,18 @@ func (r *AdminerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.secretName = getSecretName()
 	r.secretNamespace = getSecretNamespace()
 	r.Config = mgr.GetConfig()
-	
+
 	// 初始化 Istio 支持
 	ctx := context.Background()
 	if err := r.SetupIstioSupport(ctx); err != nil {
 		r.recorder.Eventf(&adminerv1.Adminer{}, corev1.EventTypeWarning, "IstioSetupFailed", "Failed to setup Istio support: %v", err)
 		// 不返回错误，继续使用 Ingress 模式
 	}
-	
+
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&adminerv1.Adminer{}).
 		Owns(&appsv1.Deployment{}).Owns(&corev1.Service{}).Owns(&corev1.Secret{}).Owns(&networkingv1.Ingress{})
-	
+
 	// 如果启用了 Istio，添加对 Istio 资源的监听
 	if r.useIstio {
 		// 使用 unstructured 类型来监听 Istio CRDs
@@ -648,18 +648,18 @@ func (r *AdminerReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			Version: "v1beta1",
 			Kind:    "VirtualService",
 		})
-		
+
 		gatewayType := &unstructured.Unstructured{}
 		gatewayType.SetGroupVersionKind(schema.GroupVersionKind{
 			Group:   "networking.istio.io",
 			Version: "v1beta1",
 			Kind:    "Gateway",
 		})
-		
+
 		controllerBuilder = controllerBuilder.
 			Owns(virtualServiceType).
 			Owns(gatewayType)
 	}
-	
+
 	return controllerBuilder.Complete(r)
 }

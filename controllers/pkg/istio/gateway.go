@@ -181,7 +181,7 @@ func (g *gatewayController) buildServers(config *GatewayConfig) []interface{} {
 	// HTTP 服务器
 	httpServer := map[string]interface{}{
 		"port": map[string]interface{}{
-			"number":   interface{}(80),
+			"number":   int64(80),
 			"name":     "http",
 			"protocol": "HTTP",
 		},
@@ -193,7 +193,7 @@ func (g *gatewayController) buildServers(config *GatewayConfig) []interface{} {
 	if config.TLSConfig != nil && len(config.TLSConfig.Hosts) > 0 {
 		httpsServer := map[string]interface{}{
 			"port": map[string]interface{}{
-				"number":   interface{}(443),
+				"number":   int64(443),
 				"name":     "https",
 				"protocol": "HTTPS",
 			},
@@ -397,6 +397,13 @@ func makeSafeForDeepCopy(obj interface{}) interface{} {
 			result[k] = makeSafeForDeepCopy(val)
 		}
 		return result
+	case map[string]string:
+		// Convert map[string]string to map[string]interface{}
+		result := make(map[string]interface{})
+		for k, val := range v {
+			result[k] = val
+		}
+		return result
 	case []interface{}:
 		result := make([]interface{}, len(v))
 		for i, val := range v {
@@ -406,23 +413,23 @@ func makeSafeForDeepCopy(obj interface{}) interface{} {
 	case []string:
 		return stringSliceToInterface(v)
 	case int:
-		return interface{}(v)
+		return int64(v)
 	case int32:
-		return interface{}(v)
+		return int64(v)
 	case int64:
-		return interface{}(v)
+		return v
 	case uint:
-		return interface{}(v)
+		return int64(v)
 	case uint32:
-		return interface{}(v)
+		return int64(v)
 	case uint64:
-		return interface{}(v)
+		return int64(v)
 	case float32:
-		return interface{}(v)
+		return float64(v)
 	case float64:
-		return interface{}(v)
+		return v
 	case bool:
-		return interface{}(v)
+		return v
 	default:
 		// string and other types should be fine as-is
 		return v

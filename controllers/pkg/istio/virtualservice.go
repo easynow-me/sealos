@@ -71,7 +71,9 @@ func (v *virtualServiceController) Create(ctx context.Context, config *VirtualSe
 
 	// 构建 VirtualService spec
 	spec := v.buildVirtualServiceSpec(config)
-	if err := unstructured.SetNestedMap(vs.Object, spec, "spec"); err != nil {
+	// 确保所有值都可以深拷贝
+	safeSpec := makeSafeForDeepCopy(spec)
+	if err := unstructured.SetNestedMap(vs.Object, safeSpec.(map[string]interface{}), "spec"); err != nil {
 		return fmt.Errorf("failed to set virtualservice spec: %w", err)
 	}
 
@@ -93,7 +95,9 @@ func (v *virtualServiceController) Update(ctx context.Context, config *VirtualSe
 
 	// 更新 spec
 	spec := v.buildVirtualServiceSpec(config)
-	if err := unstructured.SetNestedMap(vs.Object, spec, "spec"); err != nil {
+	// 确保所有值都可以深拷贝
+	safeSpec := makeSafeForDeepCopy(spec)
+	if err := unstructured.SetNestedMap(vs.Object, safeSpec.(map[string]interface{}), "spec"); err != nil {
 		return fmt.Errorf("failed to set virtualservice spec: %w", err)
 	}
 
@@ -161,9 +165,9 @@ func (v *virtualServiceController) Suspend(ctx context.Context, name, namespace 
 			"fault": map[string]interface{}{
 				"abort": map[string]interface{}{
 					"percentage": map[string]interface{}{
-						"value": interface{}(100),
+						"value": int64(100),
 					},
-					"httpStatus": interface{}(503),
+					"httpStatus": int64(503),
 				},
 			},
 		},
@@ -239,7 +243,7 @@ func (v *virtualServiceController) buildHTTPRoutes(config *VirtualServiceConfig)
 				"destination": map[string]interface{}{
 					"host": config.ServiceName,
 					"port": map[string]interface{}{
-						"number": interface{}(config.ServicePort),
+						"number": int64(config.ServicePort),
 					},
 				},
 			},
@@ -254,7 +258,7 @@ func (v *virtualServiceController) buildHTTPRoutes(config *VirtualServiceConfig)
 	// 添加重试配置
 	if config.Retries != nil {
 		retries := map[string]interface{}{
-			"attempts": interface{}(config.Retries.Attempts),
+			"attempts": int64(config.Retries.Attempts),
 		}
 		if config.Retries.PerTryTimeout != nil {
 			retries["perTryTimeout"] = config.Retries.PerTryTimeout.String()
@@ -336,7 +340,7 @@ func (v *virtualServiceController) buildCorsPolicy(cors *CorsPolicy) map[string]
 		policy["allowHeaders"] = stringSliceToInterface(cors.AllowHeaders)
 	}
 
-	policy["allowCredentials"] = interface{}(cors.AllowCredentials)
+	policy["allowCredentials"] = cors.AllowCredentials
 
 	if cors.MaxAge != nil {
 		policy["maxAge"] = cors.MaxAge.String()
@@ -563,7 +567,9 @@ func (v *virtualServiceController) CreateOrUpdate(ctx context.Context, config *V
 
 		// 构建并设置 spec
 		spec := v.buildVirtualServiceSpec(config)
-		if err := unstructured.SetNestedMap(vs.Object, spec, "spec"); err != nil {
+		// 确保所有值都可以深拷贝
+		safeSpec := makeSafeForDeepCopy(spec)
+		if err := unstructured.SetNestedMap(vs.Object, safeSpec.(map[string]interface{}), "spec"); err != nil {
 			return fmt.Errorf("failed to set virtualservice spec: %w", err)
 		}
 
