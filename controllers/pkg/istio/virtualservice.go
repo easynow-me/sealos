@@ -212,8 +212,8 @@ func (v *virtualServiceController) Resume(ctx context.Context, name, namespace s
 // buildVirtualServiceSpec 构建 VirtualService 规范
 func (v *virtualServiceController) buildVirtualServiceSpec(config *VirtualServiceConfig) map[string]interface{} {
 	spec := map[string]interface{}{
-		"hosts":    config.Hosts,
-		"gateways": config.Gateways,
+		"hosts":    stringSliceToInterface(config.Hosts),
+		"gateways": stringSliceToInterface(config.Gateways),
 	}
 
 	// 构建 HTTP 路由
@@ -329,11 +329,11 @@ func (v *virtualServiceController) buildCorsPolicy(cors *CorsPolicy) map[string]
 	}
 
 	if len(cors.AllowMethods) > 0 {
-		policy["allowMethods"] = cors.AllowMethods
+		policy["allowMethods"] = stringSliceToInterface(cors.AllowMethods)
 	}
 
 	if len(cors.AllowHeaders) > 0 {
-		policy["allowHeaders"] = cors.AllowHeaders
+		policy["allowHeaders"] = stringSliceToInterface(cors.AllowHeaders)
 	}
 
 	policy["allowCredentials"] = cors.AllowCredentials
@@ -586,4 +586,13 @@ func (v *virtualServiceController) CreateOrUpdate(ctx context.Context, config *V
 	}
 
 	return nil
+}
+
+// stringSliceToInterface converts []string to []interface{} for unstructured objects
+func stringSliceToInterface(strings []string) []interface{} {
+	result := make([]interface{}, len(strings))
+	for i, s := range strings {
+		result[i] = s
+	}
+	return result
 }

@@ -114,11 +114,9 @@ func (m *networkingManager) UpdateAppNetworking(ctx context.Context, spec *AppNe
 		}
 	}
 
-	// 2. 更新 Gateway（如果存在）
+	// 2. 创建或更新 Gateway（如果需要）
 	gatewayName := m.getGatewayName(spec)
-	if exists, err := m.gatewayController.Exists(ctx, gatewayName, spec.Namespace); err != nil {
-		return fmt.Errorf("failed to check gateway existence: %w", err)
-	} else if exists {
+	if !m.config.SharedGatewayEnabled || spec.TLSConfig != nil {
 		gatewayConfig := &GatewayConfig{
 			Name:      gatewayName,
 			Namespace: spec.Namespace,
@@ -127,15 +125,37 @@ func (m *networkingManager) UpdateAppNetworking(ctx context.Context, spec *AppNe
 			Labels:    m.buildLabels(spec),
 		}
 
-		if err := m.gatewayController.Update(ctx, gatewayConfig); err != nil {
-			return fmt.Errorf("failed to update gateway: %w", err)
+		// 检查 Gateway 是否存在
+		if exists, err := m.gatewayController.Exists(ctx, gatewayName, spec.Namespace); err != nil {
+			return fmt.Errorf("failed to check gateway existence: %w", err)
+		} else if exists {
+			// Gateway 存在，更新
+			if err := m.gatewayController.Update(ctx, gatewayConfig); err != nil {
+				return fmt.Errorf("failed to update gateway: %w", err)
+			}
+		} else {
+			// Gateway 不存在，创建
+			if err := m.gatewayController.Create(ctx, gatewayConfig); err != nil {
+				return fmt.Errorf("failed to create gateway: %w", err)
+			}
 		}
 	}
 
-	// 3. 更新 VirtualService
+	// 3. 创建或更新 VirtualService
 	vsConfig := m.buildVirtualServiceConfig(spec, gatewayName)
-	if err := m.vsController.Update(ctx, vsConfig); err != nil {
-		return fmt.Errorf("failed to update virtualservice: %w", err)
+	vsName := m.getVirtualServiceName(spec.Name)
+	
+	// 检查 VirtualService 是否存在
+	if _, err := m.vsController.Get(ctx, vsName, spec.Namespace); err != nil {
+		// VirtualService 不存在，创建新的
+		if err := m.vsController.Create(ctx, vsConfig); err != nil {
+			return fmt.Errorf("failed to create virtualservice: %w", err)
+		}
+	} else {
+		// VirtualService 存在，更新
+		if err := m.vsController.Update(ctx, vsConfig); err != nil {
+			return fmt.Errorf("failed to update virtualservice: %w", err)
+		}
 	}
 
 	return nil

@@ -181,7 +181,7 @@ func (g *gatewayController) buildServers(config *GatewayConfig) []interface{} {
 			"name":     "http",
 			"protocol": "HTTP",
 		},
-		"hosts": config.Hosts,
+		"hosts": stringSliceToInterface(config.Hosts),
 	}
 	servers = append(servers, httpServer)
 
@@ -193,7 +193,7 @@ func (g *gatewayController) buildServers(config *GatewayConfig) []interface{} {
 				"name":     "https",
 				"protocol": "HTTPS",
 			},
-			"hosts": config.TLSConfig.Hosts,
+			"hosts": stringSliceToInterface(config.TLSConfig.Hosts),
 			"tls": map[string]interface{}{
 				"mode":           "SIMPLE",
 				"credentialName": config.TLSConfig.SecretName,
