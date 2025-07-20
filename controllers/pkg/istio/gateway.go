@@ -177,7 +177,7 @@ func (g *gatewayController) buildServers(config *GatewayConfig) []interface{} {
 	// HTTP 服务器
 	httpServer := map[string]interface{}{
 		"port": map[string]interface{}{
-			"number":   80,
+			"number":   interface{}(80),
 			"name":     "http",
 			"protocol": "HTTP",
 		},
@@ -189,7 +189,7 @@ func (g *gatewayController) buildServers(config *GatewayConfig) []interface{} {
 	if config.TLSConfig != nil && len(config.TLSConfig.Hosts) > 0 {
 		httpsServer := map[string]interface{}{
 			"port": map[string]interface{}{
-				"number":   443,
+				"number":   interface{}(443),
 				"name":     "https",
 				"protocol": "HTTPS",
 			},

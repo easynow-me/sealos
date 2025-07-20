@@ -161,9 +161,9 @@ func (v *virtualServiceController) Suspend(ctx context.Context, name, namespace 
 			"fault": map[string]interface{}{
 				"abort": map[string]interface{}{
 					"percentage": map[string]interface{}{
-						"value": 100,
+						"value": interface{}(100),
 					},
-					"httpStatus": 503,
+					"httpStatus": interface{}(503),
 				},
 			},
 		},
@@ -239,7 +239,7 @@ func (v *virtualServiceController) buildHTTPRoutes(config *VirtualServiceConfig)
 				"destination": map[string]interface{}{
 					"host": config.ServiceName,
 					"port": map[string]interface{}{
-						"number": config.ServicePort,
+						"number": interface{}(config.ServicePort),
 					},
 				},
 			},
@@ -254,7 +254,7 @@ func (v *virtualServiceController) buildHTTPRoutes(config *VirtualServiceConfig)
 	// 添加重试配置
 	if config.Retries != nil {
 		retries := map[string]interface{}{
-			"attempts": config.Retries.Attempts,
+			"attempts": interface{}(config.Retries.Attempts),
 		}
 		if config.Retries.PerTryTimeout != nil {
 			retries["perTryTimeout"] = config.Retries.PerTryTimeout.String()
