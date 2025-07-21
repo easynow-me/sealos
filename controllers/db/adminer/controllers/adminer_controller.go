@@ -610,7 +610,7 @@ func (r *AdminerReconciler) buildCorsOrigins() []string {
 	if r.tlsEnabled {
 		// 添加精确的 adminer 子域名
 		corsOrigins = append(corsOrigins, fmt.Sprintf("https://adminer.%s", r.adminerDomain))
-		
+
 		// 如果有配置的公共域名，也添加它们的 adminer 子域名
 		if r.istioReconciler != nil && r.istioReconciler.config != nil {
 			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
@@ -627,7 +627,7 @@ func (r *AdminerReconciler) buildCorsOrigins() []string {
 	} else {
 		// HTTP 模式
 		corsOrigins = append(corsOrigins, fmt.Sprintf("http://adminer.%s", r.adminerDomain))
-		
+
 		if r.istioReconciler != nil && r.istioReconciler.config != nil {
 			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
 				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
@@ -639,7 +639,7 @@ func (r *AdminerReconciler) buildCorsOrigins() []string {
 			}
 		}
 	}
-	
+
 	// 去重
 	uniqueOrigins := make([]string, 0, len(corsOrigins))
 	seen := make(map[string]bool)
@@ -649,7 +649,7 @@ func (r *AdminerReconciler) buildCorsOrigins() []string {
 			seen[origin] = true
 		}
 	}
-	
+
 	return uniqueOrigins
 }
 
@@ -657,8 +657,8 @@ func (r *AdminerReconciler) buildCorsOrigins() []string {
 func (r *AdminerReconciler) buildSecurityHeaders() map[string]string {
 	headers := make(map[string]string)
 
-	// 清除 X-Frame-Options，允许 iframe 嵌入
-	headers["X-Frame-Options"] = ""
+	// 设置 X-Frame-Options，允许 iframe 嵌入
+	headers["X-Frame-Options"] = "SAMEORIGIN"
 
 	// 设置 Content Security Policy
 	cspValue := fmt.Sprintf("default-src * blob: data: *.%s %s; img-src * data: blob: resource: *.%s %s; connect-src * wss: blob: resource:; style-src 'self' 'unsafe-inline' blob: *.%s %s resource:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: *.%s %s resource: *.baidu.com *.bdstatic.com; frame-src 'self' %s *.%s mailto: tel: weixin: mtt: *.baidu.com; frame-ancestors 'self' https://%s https://*.%s",
