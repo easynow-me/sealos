@@ -77,7 +77,51 @@ export async function DeleteAppByName({ name, req }: DeleteAppParams & { req: Ne
     )
   );
 
-  const delIssuerAndCert = await Promise.allSettled([...delCertList, ...delIssuerList]);
+  // delete VirtualService
+  const virtualServicesList = (await k8sCustomObjects.listNamespacedCustomObject(
+    'networking.istio.io',
+    'v1beta1',
+    namespace,
+    'virtualservices',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    `${appDeployKey}=${name}`
+  )) as { body: { items: any[] } };
+  const delVirtualServiceList = virtualServicesList.body.items.map((item) =>
+    k8sCustomObjects.deleteNamespacedCustomObject(
+      'networking.istio.io',
+      'v1beta1',
+      namespace,
+      'virtualservices',
+      item.metadata.name
+    )
+  );
+
+  // delete Gateway
+  const gatewaysList = (await k8sCustomObjects.listNamespacedCustomObject(
+    'networking.istio.io',
+    'v1beta1',
+    namespace,
+    'gateways',
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    `${appDeployKey}=${name}`
+  )) as { body: { items: any[] } };
+  const delGatewayList = gatewaysList.body.items.map((item) =>
+    k8sCustomObjects.deleteNamespacedCustomObject(
+      'networking.istio.io',
+      'v1beta1',
+      namespace,
+      'gateways',
+      item.metadata.name
+    )
+  );
+
+  const delIssuerAndCert = await Promise.allSettled([...delCertList, ...delIssuerList, ...delVirtualServiceList, ...delGatewayList]);
   /* find not 404 error */
   delIssuerAndCert.forEach((item) => {
     console.log(item, 'delIssuerAndCert err');

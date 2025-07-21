@@ -1,0 +1,70 @@
+# Complete configuration example for applaunchpad
+# This file shows all available configuration options
+
+# Cloud configuration
+cloud:
+  domain: 'cloud.sealos.io'
+  port: ''  # Optional: specify custom port
+  userDomains:
+    - name: 'cloud.sealos.io'
+      secretName: 'wildcard-cert'
+    - name: 'custom.domain.com'
+      secretName: 'custom-cert'
+  desktopDomain: 'cloud.sealos.io'
+
+# Common settings
+common:
+  guideEnabled: true      # Enable user guide
+  apiEnabled: true        # Enable API access
+  gpuEnabled: false       # Auto-detected based on available GPU nodes
+
+# Istio configuration
+istio:
+  enabled: true                    # Enable Istio mode (VirtualService/Gateway)
+  publicDomains:                  # Domains that use shared gateway
+    - 'cloud.sealos.io'
+    - '*.cloud.sealos.io'
+    - 'sealos.io'
+    - '*.sealos.io'
+  sharedGateway: 'sealos-gateway' # Name of the shared gateway
+  enableTracing: false            # Enable distributed tracing
+
+# Launchpad specific configuration
+launchpad:
+  meta:
+    title: 'Sealos Launchpad'
+    description: 'Deploy applications on Sealos'
+    scripts: []  # Additional scripts to load
+  
+  currencySymbol: 'shellCoin'  # or 'cny' or 'usd'
+  pvcStorageMax: 20            # Maximum PVC storage in GB
+  
+  eventAnalyze:
+    enabled: false
+    fastGPTKey: ''  # API key for FastGPT integration
+  
+  # Service endpoints
+  components:
+    monitor:
+      url: 'http://launchpad-monitor.sealos.svc.cluster.local:8428'
+    billing:
+      url: 'http://account-service.account-system.svc:2333'
+    log:
+      # IMPORTANT: Configure this to point to your log service
+      # Default empty string will disable log functionality gracefully
+      url: 'http://launchpad-log-service.sealos.svc.cluster.local:8080'
+      # Or use environment variable: LOG_SERVICE_URL
+  
+  # Resource slider configuration
+  appResourceFormSliderConfig:
+    default:
+      cpu: [100, 200, 500, 1000, 2000, 3000, 4000, 8000]
+      memory: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+    gpu:  # Optional GPU configuration
+      cpu: [1000, 2000, 4000, 8000]
+      memory: [4096, 8192, 16384, 32768]
+  
+  # File manager limits
+  fileManger:
+    uploadLimit: 5      # MB
+    downloadLimit: 100  # MB

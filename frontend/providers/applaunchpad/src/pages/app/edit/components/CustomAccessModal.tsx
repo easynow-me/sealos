@@ -18,8 +18,8 @@ import { useTranslation } from 'next-i18next';
 import { Tip } from '@sealos/ui';
 import { InfoOutlineIcon } from '@chakra-ui/icons';
 import { useRequest } from '@/hooks/useRequest';
-import { postAuthCname } from '@/api/platform';
-import { SEALOS_USER_DOMAINS } from '@/store/static';
+import { postAuthCname, checkDomainResources } from '@/api/platform';
+import { SEALOS_USER_DOMAINS, ISTIO_ENABLED } from '@/store/static';
 
 export type CustomAccessModalParams = {
   publicDomain: string;
@@ -55,6 +55,23 @@ const CustomAccessModal = ({
       if (!val) {
         return onSuccess('');
       }
+      
+      // Check if domain already exists in networking resources
+      const domainCheck = await checkDomainResources({
+        domain: val,
+        networkingMode: ISTIO_ENABLED ? 'istio' : 'ingress'
+      });
+      
+      if (domainCheck.exists) {
+        throw new Error(
+          t('Domain already exists in {{resourceType}}: {{resourceName}}', {
+            resourceType: domainCheck.resourceType,
+            resourceName: domainCheck.resourceName
+          }) || `Domain already exists in ${domainCheck.resourceType}: ${domainCheck.resourceName}`
+        );
+      }
+      
+      // Validate CNAME record
       await postAuthCname({
         publicDomain: completePublicDomain,
         customDomain: val

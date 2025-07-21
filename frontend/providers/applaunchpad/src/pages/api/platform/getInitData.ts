@@ -49,7 +49,7 @@ export const defaultAppConfig: AppConfigType = {
         url: 'http://account-service.account-system.svc:2333'
       },
       log: {
-        url: 'http://localhost:8080'
+        url: process.env.LOG_SERVICE_URL || ''
       }
     },
     appResourceFormSliderConfig: {

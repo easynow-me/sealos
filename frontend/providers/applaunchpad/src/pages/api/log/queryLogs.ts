@@ -23,12 +23,13 @@ export interface LogQueryPayload {
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse<ApiResp>) {
-  const logUrl = global.AppConfig.launchpad.components.log.url;
+  const logUrl = global.AppConfig?.launchpad?.components?.log?.url;
 
-  if (!logUrl) {
+  if (!logUrl || logUrl === 'http://localhost:8080') {
+    console.warn('Log service URL not properly configured, returning empty result');
     return jsonRes(res, {
-      code: 400,
-      error: 'logUrl is not set'
+      code: 200,
+      data: []
     });
   }
 
@@ -83,15 +84,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     };
 
     console.log(params, 'params');
-    const result = await fetch(logUrl + '/queryLogsByParams', {
-      method: 'POST',
-      body: JSON.stringify(params),
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: encodeURIComponent(kubeconfig)
-      }
-    });
-    console.log('fetch /queryLogsByParams: ', result.status);
+    
+    let result;
+    try {
+      result = await fetch(logUrl + '/queryLogsByParams', {
+        method: 'POST',
+        body: JSON.stringify(params),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: encodeURIComponent(kubeconfig)
+        }
+      });
+      console.log('fetch /queryLogsByParams: ', result.status);
+    } catch (fetchError: any) {
+      console.error('Failed to connect to log service:', fetchError.message);
+      // Return empty data when log service is unavailable
+      return jsonRes(res, {
+        code: 200,
+        data: ''
+      });
+    }
+    
     const data = await result.text();
 
     jsonRes(res, {

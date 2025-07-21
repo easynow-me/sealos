@@ -644,6 +644,7 @@ export const generateNetworkingResources = (
   options?: {
     gatewayName?: string;
     sharedGateway?: boolean;
+    sharedGatewayName?: string;
     enableTracing?: boolean;
   }
 ) => {
@@ -653,7 +654,14 @@ export const generateNetworkingResources = (
   }
 
   if (mode === 'istio') {
-    return json2IstioResources(data, options);
+    // Pass the correct gateway name when using shared gateway
+    const istioOptions = {
+      ...options,
+      gatewayName: options?.sharedGateway && options?.sharedGatewayName 
+        ? options.sharedGatewayName 
+        : options?.gatewayName
+    };
+    return json2IstioResources(data, istioOptions);
   } else {
     return json2Ingress(data);
   }

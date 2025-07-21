@@ -20,7 +20,7 @@ import {
   generateNetworkingResources,
   getNetworkingMode
 } from '@/utils/deployYaml2Json';
-import { ISTIO_ENABLED, ISTIO_ENABLE_TRACING } from '@/store/static';
+import { ISTIO_ENABLED, ISTIO_ENABLE_TRACING, ISTIO_PUBLIC_DOMAINS, ISTIO_SHARED_GATEWAY } from '@/store/static';
 import { serviceSideProps } from '@/utils/i18n';
 import { getErrText, patchYamlList } from '@/utils/tools';
 import { Box, Flex } from '@chakra-ui/react';
@@ -41,6 +41,55 @@ import { useGuideStore } from '@/store/guide';
 const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz', 12);
 
 const ErrorModal = dynamic(() => import('./components/ErrorModal'));
+
+// Helper function to determine if a domain is public
+const isPublicDomain = (domain: string): boolean => {
+  if (!ISTIO_PUBLIC_DOMAINS || ISTIO_PUBLIC_DOMAINS.length === 0) {
+    return false;
+  }
+  
+  // Check if the domain matches any public domain patterns
+  return ISTIO_PUBLIC_DOMAINS.some(publicDomain => {
+    // Handle wildcard domains (e.g., *.cloud.sealos.io)
+    if (publicDomain.startsWith('*.')) {
+      const baseDomain = publicDomain.substring(2);
+      return domain === baseDomain || domain.endsWith(`.${baseDomain}`);
+    }
+    // Exact match
+    return domain === publicDomain;
+  });
+};
+
+// Helper function to determine gateway options based on network configuration
+const getGatewayOptions = (data: AppEditType) => {
+  if (!ISTIO_ENABLED) {
+    return {
+      networkingMode: 'ingress' as const,
+      enableSmartGateway: false
+    };
+  }
+
+  // Check if any network uses custom domains
+  const hasCustomDomains = data.networks?.some(network => 
+    network.openPublicDomain && network.customDomain
+  );
+  
+  // Check if all networks use public domains
+  const allPublicDomains = data.networks?.every(network => {
+    if (!network.openPublicDomain) return true; // Skip non-public networks
+    
+    const fullDomain = network.customDomain || `${network.publicDomain}.${network.domain}`;
+    return isPublicDomain(fullDomain);
+  });
+
+  return {
+    networkingMode: 'istio' as const,
+    enableSmartGateway: true,
+    // Use shared gateway only if all domains are public
+    useSharedGateway: !hasCustomDomains && allPublicDomains,
+    sharedGatewayName: ISTIO_SHARED_GATEWAY
+  };
+};
 
 export const formData2Yamls = (
   data: AppEditType,
@@ -64,8 +113,10 @@ export const formData2Yamls = (
 
     if (networkingMode === 'istio') {
       // Use intelligent Gateway optimization
+      const gatewayOptions = getGatewayOptions(data);
       const istioResources = generateNetworkingResources(data, 'istio', {
-        sharedGateway: options?.enableSmartGateway !== false, // Default to true for smart optimization
+        sharedGateway: gatewayOptions.useSharedGateway,
+        sharedGatewayName: gatewayOptions.sharedGatewayName,
         enableTracing: ISTIO_ENABLE_TRACING
       });
 
@@ -311,14 +362,14 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
         if (!res) return;
         console.log(res, 'init res');
         oldAppEditData.current = res;
-        formOldYamls.current = formData2Yamls(res);
+        formOldYamls.current = formData2Yamls(res, getGatewayOptions(res));
         crOldYamls.current = res.crYamlList;
 
         setDefaultStorePathList(res.storeList.map((item) => item.path));
         setDefaultGpuSource(res.gpu);
         formHook.reset(adaptEditAppData(res));
         setAlready(true);
-        setYamlList(formData2Yamls(realTimeForm.current));
+        setYamlList(formData2Yamls(realTimeForm.current, getGatewayOptions(realTimeForm.current)));
       },
       onError(err) {
         toast({
@@ -335,7 +386,7 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
   useEffect(() => {
     if (tabType === 'yaml') {
       try {
-        setYamlList(formData2Yamls(realTimeForm.current));
+        setYamlList(formData2Yamls(realTimeForm.current, getGatewayOptions(realTimeForm.current)));
       } catch (error) {}
     }
   }, [router.query.name, tabType]);
@@ -396,7 +447,7 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
           applyBtnText={applyBtnText}
           applyCb={() => {
             formHook.handleSubmit(async (data) => {
-              const parseYamls = formData2Yamls(data);
+              const parseYamls = formData2Yamls(data, getGatewayOptions(data));
               setYamlList(parseYamls);
 
               // gpu inventory check

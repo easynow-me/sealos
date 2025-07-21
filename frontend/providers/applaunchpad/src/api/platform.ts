@@ -41,3 +41,13 @@ export const checkPermission = (payload: { appName: string }) =>
 
 export const checkReady = (appName: string) =>
   GET<{ url: string; ready: boolean; error?: string }[]>(`/api/checkReady?appName=${appName}`);
+
+export const checkDomainResources = (data: { 
+  domain: string; 
+  networkingMode?: 'ingress' | 'istio' 
+}) => POST<{
+  exists: boolean;
+  resourceType: string;
+  resourceName: string;
+  networkingMode: string;
+}>('/api/platform/checkDomainResources', data);
