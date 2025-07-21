@@ -69,10 +69,10 @@ const MyApp = ({ Component, pageProps, config }: AppProps & AppOwnProps) => {
       } = await (() => loadInitData())();
       initFormSliderList(FORM_SLIDER_LIST_CONFIG);
       setIstioConfig({
-        enabled: ISTIO_ENABLED,
-        publicDomains: ISTIO_PUBLIC_DOMAINS,
-        sharedGateway: ISTIO_SHARED_GATEWAY,
-        enableTracing: ISTIO_ENABLE_TRACING
+        enabled: ISTIO_ENABLED || false,
+        publicDomains: ISTIO_PUBLIC_DOMAINS || [],
+        sharedGateway: ISTIO_SHARED_GATEWAY || 'sealos-gateway',
+        enableTracing: ISTIO_ENABLE_TRACING || false
       });
       loadUserSourcePrice();
 
