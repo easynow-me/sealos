@@ -132,31 +132,6 @@ export const json2VirtualService = (data: AppEditType, gatewayName?: string, opt
 
     // Build CORS policy
     const getCorsPolicy = () => {
-      // Check if this is an Adminer application
-      const isAdminer = data.appName.toLowerCase().includes('adminer');
-      
-      if (isAdminer && options?.publicDomains && options.publicDomains.length > 0) {
-        // Special CORS policy for Adminer with specific allowed origins
-        const allowOrigins = options.publicDomains.map(domain => {
-          // Handle wildcard domains (e.g., *.cloud.sealos.io)
-          if (domain.startsWith('*.')) {
-            const baseDomain = domain.substring(2);
-            return { exact: `https://adminer.${baseDomain}` };
-          }
-          // For exact domains
-          return { exact: `https://adminer.${domain}` };
-        });
-        
-        return {
-          allowOrigins,
-          allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-          allowHeaders: ['content-type', 'authorization', 'upgrade', 'connection'],
-          allowCredentials: true, // Adminer may need credentials
-          maxAge: '24h'
-        };
-      }
-      
-      // Default CORS policy for non-Adminer apps
       return {
         allowOrigins: [
           {

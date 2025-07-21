@@ -129,7 +129,7 @@ type AdminerReconciler struct {
 	image           string
 	secretName      string
 	secretNamespace string
-	istioReconciler *AdminerIstioNetworkingReconciler // 保留向后兼容
+	istioReconciler *AdminerIstioNetworkingReconciler     // 保留向后兼容
 	istioHelper     *istio.UniversalIstioNetworkingHelper // 🎯 新增通用助手
 	useIstio        bool
 }
@@ -531,7 +531,7 @@ func (r *AdminerReconciler) syncIstioNetworking(ctx context.Context, adminer *ad
 func (r *AdminerReconciler) syncOptimizedIstioNetworking(ctx context.Context, adminer *adminerv1.Adminer, hostname string, recLabels map[string]string) error {
 	// 构建域名
 	host := hostname + "." + r.adminerDomain
-	
+
 	// 🎯 使用通用助手的智能网络配置
 	params := &istio.AppNetworkingParams{
 		Name:        adminer.Name,
@@ -541,43 +541,42 @@ func (r *AdminerReconciler) syncOptimizedIstioNetworking(ctx context.Context, ad
 		ServiceName: adminer.Name,
 		ServicePort: 8080,
 		Protocol:    istio.ProtocolHTTP,
-		
+
 		// 数据库管理器专用配置
 		Timeout: &[]time.Duration{86400 * time.Second}[0], // 24小时超时
-		
+
 		// CORS 配置
 		CorsPolicy: &istio.CorsPolicy{
 			AllowOrigins:     r.buildCorsOrigins(),
-			AllowMethods:     []string{"PUT", "GET", "POST", "PATCH", "OPTIONS"},
-			AllowHeaders:     []string{"content-type", "authorization"},
-			AllowCredentials: false,
+			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+			AllowHeaders:     []string{"content-type", "authorization", "cookie", "x-requested-with"},
+			AllowCredentials: true,
 		},
-		
+
 		// 安全头部配置
 		Headers: r.buildSecurityHeaders(),
-		
+
 		// TLS 配置
 		TLSEnabled: r.tlsEnabled,
-		
+
 		// 标签和注解
-		Labels:      recLabels,
+		Labels: recLabels,
 		Annotations: map[string]string{
 			"sealos.io/converted-from": "adminer-controller",
-			"sealos.io/gateway-type":   "optimized", // 标记使用优化Gateway
 		},
-		
+
 		// 设置 Owner Reference
 		OwnerObject: adminer,
 	}
-	
+
 	// 🎯 关键：使用通用助手创建优化的网络配置（自动选择Gateway）
 	if err := r.istioHelper.CreateOrUpdateNetworking(ctx, params); err != nil {
 		return fmt.Errorf("failed to sync optimized istio networking: %w", err)
 	}
-	
+
 	// 🎯 分析域名需求（展示智能Gateway选择过程）
 	analysis := r.istioHelper.AnalyzeDomainRequirements(params)
-	
+
 	// 更新 Adminer 状态中的域名和Gateway信息
 	var protocol string
 	if r.tlsEnabled {
@@ -586,10 +585,10 @@ func (r *AdminerReconciler) syncOptimizedIstioNetworking(ctx context.Context, ad
 		protocol = protocolHTTP
 	}
 	domain := protocol + host
-	
+
 	return retryStatusUpdateOnConflict(ctx, r.Client, adminer, func() {
 		adminer.Status.Domain = domain
-		
+
 		// 🎯 添加Gateway优化状态信息
 		if adminer.Annotations == nil {
 			adminer.Annotations = make(map[string]string)
@@ -605,30 +604,62 @@ func (r *AdminerReconciler) syncOptimizedIstioNetworking(ctx context.Context, ad
 	})
 }
 
-// buildCorsOrigins 构建CORS源
+// buildCorsOrigins 构建CORS源 - 使用精确匹配的adminer子域名
 func (r *AdminerReconciler) buildCorsOrigins() []string {
 	corsOrigins := []string{}
 	if r.tlsEnabled {
-		corsOrigins = []string{
-			fmt.Sprintf("https://%s", r.adminerDomain),
-			fmt.Sprintf("https://*.%s", r.adminerDomain),
+		// 添加精确的 adminer 子域名
+		corsOrigins = append(corsOrigins, fmt.Sprintf("https://adminer.%s", r.adminerDomain))
+		
+		// 如果有配置的公共域名，也添加它们的 adminer 子域名
+		if r.istioReconciler != nil && r.istioReconciler.config != nil {
+			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
+				// 处理通配符域名 (如 *.cloud.sealos.io)
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://adminer.%s", baseDomain))
+				} else {
+					// 精确域名
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://adminer.%s", publicDomain))
+				}
+			}
 		}
 	} else {
-		corsOrigins = []string{
-			fmt.Sprintf("http://%s", r.adminerDomain),
-			fmt.Sprintf("http://*.%s", r.adminerDomain),
+		// HTTP 模式
+		corsOrigins = append(corsOrigins, fmt.Sprintf("http://adminer.%s", r.adminerDomain))
+		
+		if r.istioReconciler != nil && r.istioReconciler.config != nil {
+			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://adminer.%s", baseDomain))
+				} else {
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://adminer.%s", publicDomain))
+				}
+			}
 		}
 	}
-	return corsOrigins
+	
+	// 去重
+	uniqueOrigins := make([]string, 0, len(corsOrigins))
+	seen := make(map[string]bool)
+	for _, origin := range corsOrigins {
+		if !seen[origin] {
+			uniqueOrigins = append(uniqueOrigins, origin)
+			seen[origin] = true
+		}
+	}
+	
+	return uniqueOrigins
 }
 
 // buildSecurityHeaders 构建安全头部
 func (r *AdminerReconciler) buildSecurityHeaders() map[string]string {
 	headers := make(map[string]string)
-	
+
 	// 清除 X-Frame-Options，允许 iframe 嵌入
 	headers["X-Frame-Options"] = ""
-	
+
 	// 设置 Content Security Policy
 	cspValue := fmt.Sprintf("default-src * blob: data: *.%s %s; img-src * data: blob: resource: *.%s %s; connect-src * wss: blob: resource:; style-src 'self' 'unsafe-inline' blob: *.%s %s resource:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: *.%s %s resource: *.baidu.com *.bdstatic.com; frame-src 'self' %s *.%s mailto: tel: weixin: mtt: *.baidu.com; frame-ancestors 'self' https://%s https://*.%s",
 		r.adminerDomain, r.adminerDomain,
@@ -637,12 +668,12 @@ func (r *AdminerReconciler) buildSecurityHeaders() map[string]string {
 		r.adminerDomain, r.adminerDomain,
 		r.adminerDomain, r.adminerDomain,
 		r.adminerDomain, r.adminerDomain)
-	
+
 	headers["Content-Security-Policy"] = cspValue
-	
+
 	// 设置 XSS 保护
 	headers["X-Xss-Protection"] = "1; mode=block"
-	
+
 	return headers
 }
 
