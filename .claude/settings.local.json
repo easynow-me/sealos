@@ -59,7 +59,8 @@
       "Bash(mv:*)",
       "Bash(./sealos-ingress-converter:*)",
       "Bash($CONVERTER:*)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(npx tsc:*)"
     ],
     "deny": []
   }

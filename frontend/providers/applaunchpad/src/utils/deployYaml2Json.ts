@@ -9,10 +9,10 @@ import {
 } from '@/constants/app';
 import { SEALOS_USER_DOMAINS } from '@/store/static';
 import type { AppEditType } from '@/types/app';
-import { pathFormat, mountPathToConfigMapKey, str2Num, strToBase64 } from '@/utils/tools';
+import { str2Num, strToBase64 } from '@/utils/tools';
 import dayjs from 'dayjs';
 import yaml from 'js-yaml';
-import { json2IstioResources, json2NetworkingResources } from './istioYaml';
+import { json2IstioResources } from './istioYaml';
 
 export const json2DeployCr = (data: AppEditType, type: 'deployment' | 'statefulset') => {
   const totalStorage = data.storeList.reduce((acc, item) => acc + item.value, 0);
@@ -92,7 +92,7 @@ export const json2DeployCr = (data: AppEditType, type: 'deployment' | 'statefuls
         return [data.cmdParam];
       }
     })(),
-    ports: data.networks.map((item, i) => ({
+    ports: data.networks.map((item) => ({
       containerPort: item.port,
       name: item.portName
     })),
@@ -233,7 +233,7 @@ export const json2Service = (data: AppEditType) => {
   const openPublicPorts: any[] = [];
   const closedPublicPorts: any[] = [];
 
-  data.networks.forEach((network, i) => {
+  data.networks.forEach((network) => {
     const port = {
       port: str2Num(network.port),
       targetPort: str2Num(network.port),
@@ -322,7 +322,7 @@ export const json2Ingress = (data: AppEditType) => {
 
   const result = data.networks
     .filter((item) => item.openPublicDomain && !item.openNodePort)
-    .map((network, i) => {
+    .map((network) => {
       const host = network.customDomain
         ? network.customDomain
         : `${network.publicDomain}.${network.domain}`;

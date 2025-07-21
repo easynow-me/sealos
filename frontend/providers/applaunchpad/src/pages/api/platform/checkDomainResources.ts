@@ -21,7 +21,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     const kubeconfig = await authSession(req.headers);
-    const { k8sApp, k8sCustomObjects, namespace } = await getK8s({
+    const { k8sNetworkingApp, k8sCustomObjects, namespace } = await getK8s({
       kubeconfig: kubeconfig
     });
 
@@ -83,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } else {
       // Check Ingress resources
       try {
-        const { body: ingresses } = await k8sApp.listNamespacedIngress(namespace);
+        const { body: ingresses } = await k8sNetworkingApp.listNamespacedIngress(namespace);
         
         // Check if any Ingress has the domain
         for (const ingress of ingresses.items) {

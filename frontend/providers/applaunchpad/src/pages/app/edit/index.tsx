@@ -22,7 +22,7 @@ import {
 } from '@/utils/deployYaml2Json';
 import { ISTIO_ENABLED, ISTIO_ENABLE_TRACING, ISTIO_PUBLIC_DOMAINS, ISTIO_SHARED_GATEWAY } from '@/store/static';
 import { serviceSideProps } from '@/utils/i18n';
-import { getErrText, patchYamlList } from '@/utils/tools';
+import { patchYamlList } from '@/utils/tools';
 import { Box, Flex } from '@chakra-ui/react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'next-i18next';
@@ -194,13 +194,13 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
   const [forceUpdate, setForceUpdate] = useState(false);
   const { setAppDetail } = useAppStore();
   const { screenWidth, formSliderListConfig } = useGlobalStore();
-  const { userSourcePrice, loadUserSourcePrice, checkQuotaAllow } = useUserStore();
+  const { userSourcePrice, loadUserSourcePrice } = useUserStore();
   const { title, applyBtnText, applyMessage, applySuccess, applyError } = editModeMap(!!appName);
   const [yamlList, setYamlList] = useState<YamlItemType[]>([]);
   const [errorMessage, setErrorMessage] = useState('');
   const [errorCode, setErrorCode] = useState<ResponseCode>();
   const [already, setAlready] = useState(false);
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isAdvancedOpen] = useState(false);
   const [defaultStorePathList, setDefaultStorePathList] = useState<string[]>([]); // default store will no be edit
   const [defaultGpuSource, setDefaultGpuSource] = useState<AppEditType['gpu']>({
     type: '',
