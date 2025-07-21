@@ -7,7 +7,7 @@ import { getK8s } from '@/services/backend/kubernetes';
 import { jsonRes } from '@/services/backend/response';
 import { devboxKey, ingressProtocolKey, publicDomainKey } from '@/constants/devbox';
 import { RequestSchema } from './schema';
-import { json2Service, json2Ingress } from '@/utils/json2Yaml';
+import { json2Service, json2Ingress, generateNetworkingYaml } from '@/utils/json2Yaml';
 import { nanoid } from '@/utils/tools';
 
 export const dynamic = 'force-dynamic';
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create new port
-    const { INGRESS_SECRET } = process.env;
+    const { INGRESS_SECRET, ISTIO_ENABLED, USE_ISTIO, ISTIO_SHARED_GATEWAY } = process.env;
     const newNetwork = {
       name: devboxName,
       networks: [
@@ -98,7 +98,14 @@ export async function POST(req: NextRequest) {
       ]
     };
 
-    const ingressYaml = json2Ingress(newNetwork, INGRESS_SECRET as string);
+    // Use Istio or Ingress based on configuration
+    const useIstio = ISTIO_ENABLED === 'true' || USE_ISTIO === 'true';
+    const networkingMode = useIstio ? 'istio' : 'ingress';
+    const networkingYaml = generateNetworkingYaml(newNetwork, networkingMode, {
+      ingressSecret: INGRESS_SECRET,
+      sharedGateway: useIstio && ISTIO_SHARED_GATEWAY ? true : false,
+      gatewayName: ISTIO_SHARED_GATEWAY || 'sealos-gateway'
+    });
 
     // Update service
     try {
@@ -136,8 +143,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update ingress
-    await applyYamlList([ingressYaml], 'create');
+    // Update networking (Ingress or VirtualService/Gateway)
+    await applyYamlList([networkingYaml].filter(yaml => yaml), 'create');
 
     return jsonRes({
       data: [

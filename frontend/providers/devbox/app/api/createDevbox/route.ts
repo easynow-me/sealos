@@ -5,7 +5,7 @@ import { getK8s } from '@/services/backend/kubernetes';
 import { jsonRes } from '@/services/backend/response';
 import { devboxDB } from '@/services/db/init';
 import { KBDevboxTypeV2 } from '@/types/k8s';
-import { json2DevboxV2, json2Ingress, json2Service } from '@/utils/json2Yaml';
+import { json2DevboxV2, json2Service, generateNetworkingYaml } from '@/utils/json2Yaml';
 import { RequestSchema } from './schema';
 
 export const dynamic = 'force-dynamic';
@@ -66,11 +66,20 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { INGRESS_SECRET, DEVBOX_AFFINITY_ENABLE, SQUASH_ENABLE } = process.env;
+    const { INGRESS_SECRET, DEVBOX_AFFINITY_ENABLE, SQUASH_ENABLE, ISTIO_ENABLED, USE_ISTIO, ISTIO_SHARED_GATEWAY } = process.env;
     const devbox = json2DevboxV2(devboxForm, DEVBOX_AFFINITY_ENABLE, SQUASH_ENABLE);
     const service = json2Service(devboxForm);
-    const ingress = json2Ingress(devboxForm, INGRESS_SECRET as string);
-    await applyYamlList([devbox, service, ingress], 'create');
+    
+    // Use Istio or Ingress based on configuration
+    const useIstio = ISTIO_ENABLED === 'true' || USE_ISTIO === 'true';
+    const networkingMode = useIstio ? 'istio' : 'ingress';
+    const networkingYaml = generateNetworkingYaml(devboxForm, networkingMode, {
+      ingressSecret: INGRESS_SECRET,
+      sharedGateway: useIstio && ISTIO_SHARED_GATEWAY ? true : false,
+      gatewayName: ISTIO_SHARED_GATEWAY || 'sealos-gateway'
+    });
+    
+    await applyYamlList([devbox, service, networkingYaml].filter(yaml => yaml), 'create');
 
     return jsonRes({
       data: 'success create devbox'

@@ -22,6 +22,11 @@ export interface Env {
   rootRuntimeNamespace: string;
   ingressDomain: string;
   currencySymbol: 'shellCoin' | 'cny' | 'usd';
+  // Istio configuration
+  istioEnabled?: boolean;
+  istioPublicDomains?: string[];
+  istioSharedGateway?: string;
+  istioEnableTracing?: boolean;
 }
 
 export interface RuntimeTypeMap {

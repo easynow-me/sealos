@@ -15,7 +15,12 @@ export const defaultEnv: Env = {
   privacyUrl: '',
   rootRuntimeNamespace: 'devbox-system',
   ingressDomain: 'sealosusw.site',
-  currencySymbol: 'shellCoin'
+  currencySymbol: 'shellCoin',
+  // Istio defaults
+  istioEnabled: false,
+  istioPublicDomains: [],
+  istioSharedGateway: 'sealos-gateway',
+  istioEnableTracing: false
 };
 
 type State = {

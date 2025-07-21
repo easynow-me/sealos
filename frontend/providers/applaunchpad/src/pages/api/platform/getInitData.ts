@@ -23,6 +23,12 @@ export const defaultAppConfig: AppConfigType = {
     apiEnabled: false,
     gpuEnabled: false
   },
+  istio: {
+    enabled: false,
+    publicDomains: [],
+    sharedGateway: 'sealos-gateway',
+    enableTracing: false
+  },
   launchpad: {
     meta: {
       title: 'Sealos Desktop App Demo',
@@ -72,15 +78,71 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!global.AppConfig) {
       const filename =
         process.env.NODE_ENV === 'development' ? 'data/config.yaml.local' : '/app/data/config.yaml';
-      const res: any = yaml.load(readFileSync(filename, 'utf-8'));
-      const config = {
+      
+      let fileContent: any = {};
+      try {
+        const fileData = readFileSync(filename, 'utf-8');
+        fileContent = yaml.load(fileData) || {};
+      } catch (fileError) {
+        console.log('Config file not found or empty, using defaults:', filename);
+      }
+      
+      // Deep merge configuration with defaults
+      const config: AppConfigType = {
         ...defaultAppConfig,
-        ...res
+        ...fileContent,
+        // Ensure nested objects are properly merged
+        common: {
+          ...defaultAppConfig.common,
+          ...(fileContent?.common || {})
+        },
+        launchpad: {
+          ...defaultAppConfig.launchpad,
+          ...(fileContent?.launchpad || {}),
+          // Deep merge nested launchpad properties
+          meta: {
+            ...defaultAppConfig.launchpad.meta,
+            ...(fileContent?.launchpad?.meta || {})
+          },
+          eventAnalyze: {
+            ...defaultAppConfig.launchpad.eventAnalyze,
+            ...(fileContent?.launchpad?.eventAnalyze || {})
+          },
+          components: {
+            ...defaultAppConfig.launchpad.components,
+            ...(fileContent?.launchpad?.components || {})
+          },
+          appResourceFormSliderConfig: fileContent?.launchpad?.appResourceFormSliderConfig || defaultAppConfig.launchpad.appResourceFormSliderConfig,
+          fileManger: {
+            ...defaultAppConfig.launchpad.fileManger,
+            ...(fileContent?.launchpad?.fileManger || {})
+          }
+        },
+        cloud: {
+          ...defaultAppConfig.cloud,
+          ...(fileContent?.cloud || {})
+        },
+        istio: {
+          ...defaultAppConfig.istio,
+          ...(fileContent?.istio || {})
+        }
       };
+      
       global.AppConfig = config;
-      const gpuNodes = await getGpuNode();
-      console.log(gpuNodes, 'gpuNodes');
-      global.AppConfig.common.gpuEnabled = gpuNodes.length > 0;
+      
+      try {
+        const gpuNodes = await getGpuNode();
+        console.log(gpuNodes, 'gpuNodes');
+        global.AppConfig.common.gpuEnabled = gpuNodes.length > 0;
+      } catch (gpuError) {
+        console.log('Error getting GPU nodes:', gpuError);
+        global.AppConfig.common.gpuEnabled = false;
+      }
+    }
+
+    // Ensure global.AppConfig exists before passing to getServerEnv
+    if (!global.AppConfig) {
+      global.AppConfig = defaultAppConfig;
     }
 
     jsonRes<EnvResponse>(res, {
@@ -88,30 +150,40 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   } catch (error) {
     console.log('error: /api/platform/getInitData', error);
-    jsonRes(res, {
-      code: 500,
-      error: 'Missing necessary configuration files'
+    // Return default config on error
+    jsonRes<EnvResponse>(res, {
+      data: getServerEnv(defaultAppConfig)
     });
   }
 }
 
 export const getServerEnv = (AppConfig: AppConfigType): EnvResponse => {
+  // Ensure AppConfig has all required properties
+  const safeConfig = {
+    ...defaultAppConfig,
+    ...AppConfig,
+    cloud: { ...defaultAppConfig.cloud, ...(AppConfig?.cloud || {}) },
+    common: { ...defaultAppConfig.common, ...(AppConfig?.common || {}) },
+    launchpad: { ...defaultAppConfig.launchpad, ...(AppConfig?.launchpad || {}) },
+    istio: { ...defaultAppConfig.istio, ...(AppConfig?.istio || {}) }
+  };
+
   return {
-    SEALOS_DOMAIN: AppConfig.cloud.domain,
-    DOMAIN_PORT: AppConfig.cloud.port?.toString() || '',
-    SHOW_EVENT_ANALYZE: AppConfig.launchpad.eventAnalyze.enabled,
-    FORM_SLIDER_LIST_CONFIG: AppConfig.launchpad.appResourceFormSliderConfig,
-    guideEnabled: AppConfig.common.guideEnabled,
-    fileMangerConfig: AppConfig.launchpad.fileManger,
-    CURRENCY: AppConfig.launchpad.currencySymbol || Coin.shellCoin,
-    SEALOS_USER_DOMAINS: AppConfig.cloud.userDomains || [],
-    DESKTOP_DOMAIN: AppConfig.cloud.desktopDomain,
-    PVC_STORAGE_MAX: AppConfig.launchpad.pvcStorageMax || 20,
-    GPU_ENABLED: AppConfig.common.gpuEnabled,
+    SEALOS_DOMAIN: safeConfig.cloud.domain,
+    DOMAIN_PORT: safeConfig.cloud.port?.toString() || '',
+    SHOW_EVENT_ANALYZE: safeConfig.launchpad.eventAnalyze.enabled,
+    FORM_SLIDER_LIST_CONFIG: safeConfig.launchpad.appResourceFormSliderConfig,
+    guideEnabled: safeConfig.common.guideEnabled,
+    fileMangerConfig: safeConfig.launchpad.fileManger,
+    CURRENCY: safeConfig.launchpad.currencySymbol || Coin.shellCoin,
+    SEALOS_USER_DOMAINS: safeConfig.cloud.userDomains || [],
+    DESKTOP_DOMAIN: safeConfig.cloud.desktopDomain,
+    PVC_STORAGE_MAX: safeConfig.launchpad.pvcStorageMax || 20,
+    GPU_ENABLED: safeConfig.common.gpuEnabled || false,
     // Istio configuration
-    ISTIO_ENABLED: AppConfig.istio?.enabled || false,
-    ISTIO_PUBLIC_DOMAINS: AppConfig.istio?.publicDomains || [],
-    ISTIO_SHARED_GATEWAY: AppConfig.istio?.sharedGateway || 'sealos-gateway',
-    ISTIO_ENABLE_TRACING: AppConfig.istio?.enableTracing || false
+    ISTIO_ENABLED: safeConfig.istio?.enabled || false,
+    ISTIO_PUBLIC_DOMAINS: safeConfig.istio?.publicDomains || [],
+    ISTIO_SHARED_GATEWAY: safeConfig.istio?.sharedGateway || 'sealos-gateway',
+    ISTIO_ENABLE_TRACING: safeConfig.istio?.enableTracing || false
   };
 };

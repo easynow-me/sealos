@@ -30,7 +30,16 @@ export async function GET(req: NextRequest) {
         currencySymbol: (process.env.CURRENCY_SYMBOL || defaultEnv.currencySymbol) as
           | 'shellCoin'
           | 'cny'
-          | 'usd'
+          | 'usd',
+        // Istio configuration
+        istioEnabled: process.env.ISTIO_ENABLED === 'true' || 
+                     process.env.USE_ISTIO === 'true' || 
+                     defaultEnv.istioEnabled,
+        istioPublicDomains: process.env.ISTIO_PUBLIC_DOMAINS?.split(',').map(d => d.trim()) || 
+                           defaultEnv.istioPublicDomains,
+        istioSharedGateway: process.env.ISTIO_SHARED_GATEWAY || defaultEnv.istioSharedGateway,
+        istioEnableTracing: process.env.ISTIO_ENABLE_TRACING === 'true' || 
+                           defaultEnv.istioEnableTracing
       }
     });
   } catch (err: any) {

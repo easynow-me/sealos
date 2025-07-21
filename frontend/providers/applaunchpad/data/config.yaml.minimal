@@ -1,0 +1,14 @@
+# Minimal configuration file for applaunchpad
+# This file can be used as a starting point or for testing
+
+# Enable Istio mode
+istio:
+  enabled: true
+  publicDomains:
+    - 'cloud.sealos.io'
+    - '*.cloud.sealos.io'
+  sharedGateway: 'sealos-gateway'
+
+# Basic cloud configuration
+cloud:
+  domain: 'cloud.sealos.io'
