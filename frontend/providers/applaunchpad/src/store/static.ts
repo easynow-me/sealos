@@ -11,6 +11,10 @@ export let UPLOAD_LIMIT = 50;
 export let DOWNLOAD_LIMIT = 100;
 export let PVC_STORAGE_MAX = 20;
 export let GPU_ENABLED = false;
+export let ISTIO_ENABLED = false;
+export let ISTIO_PUBLIC_DOMAINS: string[] = [];
+export let ISTIO_SHARED_GATEWAY = 'sealos-gateway';
+export let ISTIO_ENABLE_TRACING = false;
 
 export const loadInitData = async () => {
   try {
@@ -26,6 +30,12 @@ export const loadInitData = async () => {
     DESKTOP_DOMAIN = res.DESKTOP_DOMAIN;
     PVC_STORAGE_MAX = res.PVC_STORAGE_MAX;
     GPU_ENABLED = res.GPU_ENABLED;
+    
+    // Load Istio configuration
+    ISTIO_ENABLED = res.ISTIO_ENABLED || false;
+    ISTIO_PUBLIC_DOMAINS = res.ISTIO_PUBLIC_DOMAINS || [];
+    ISTIO_SHARED_GATEWAY = res.ISTIO_SHARED_GATEWAY || 'sealos-gateway';
+    ISTIO_ENABLE_TRACING = res.ISTIO_ENABLE_TRACING || false;
 
     return {
       SEALOS_DOMAIN,
@@ -33,7 +43,11 @@ export const loadInitData = async () => {
       CURRENCY,
       FORM_SLIDER_LIST_CONFIG: res.FORM_SLIDER_LIST_CONFIG,
       DESKTOP_DOMAIN: res.DESKTOP_DOMAIN,
-      GPU_ENABLED
+      GPU_ENABLED,
+      ISTIO_ENABLED,
+      ISTIO_PUBLIC_DOMAINS,
+      ISTIO_SHARED_GATEWAY,
+      ISTIO_ENABLE_TRACING
     };
   } catch (error) {}
 

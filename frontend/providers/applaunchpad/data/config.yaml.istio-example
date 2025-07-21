@@ -1,0 +1,59 @@
+# Example configuration file for enabling Istio in applaunchpad
+# Copy this file to config.yaml.local (for development) or /app/data/config.yaml (for production)
+
+cloud:
+  domain: 'cloud.sealos.io'
+  port: ''
+  userDomains:
+    - name: 'cloud.sealos.io'
+      secretName: 'wildcard-cert'
+  desktopDomain: 'cloud.sealos.io'
+
+common:
+  guideEnabled: false
+  apiEnabled: false
+  gpuEnabled: false
+
+# Istio configuration - this enables runtime Istio mode
+istio:
+  # Enable Istio mode for VirtualService/Gateway instead of Ingress
+  enabled: true
+  
+  # List of public domains that should use shared gateways
+  # These domains will be considered "public" and share a common gateway
+  publicDomains:
+    - 'cloud.sealos.io'
+    - '*.cloud.sealos.io'
+    - 'sealos.io'
+    - '*.sealos.io'
+  
+  # Name of the shared gateway for public domains
+  sharedGateway: 'sealos-gateway'
+  
+  # Enable distributed tracing (requires Istio telemetry setup)
+  enableTracing: false
+
+launchpad:
+  meta:
+    title: 'Sealos Launchpad with Istio'
+    description: 'Sealos Launchpad with Istio Service Mesh'
+    scripts: []
+  currencySymbol: 'shellCoin'
+  pvcStorageMax: 20
+  eventAnalyze:
+    enabled: false
+    fastGPTKey: ''
+  components:
+    monitor:
+      url: 'http://launchpad-monitor.sealos.svc.cluster.local:8428'
+    billing:
+      url: 'http://account-service.account-system.svc:2333'
+    log:
+      url: 'http://localhost:8080'
+  appResourceFormSliderConfig:
+    default:
+      cpu: [100, 200, 500, 1000, 2000, 3000, 4000, 8000]
+      memory: [64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+  fileManger:
+    uploadLimit: 5
+    downloadLimit: 100

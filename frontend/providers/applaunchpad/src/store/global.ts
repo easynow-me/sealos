@@ -13,6 +13,18 @@ type State = {
   setLastRoute: (val: string) => void;
   formSliderListConfig: FormSliderListType;
   initFormSliderList: (e?: FormSliderListType) => void;
+  istioConfig: {
+    enabled: boolean;
+    publicDomains: string[];
+    sharedGateway: string;
+    enableTracing: boolean;
+  };
+  setIstioConfig: (config: {
+    enabled: boolean;
+    publicDomains: string[];
+    sharedGateway: string;
+    enableTracing: boolean;
+  }) => void;
 };
 
 export const useGlobalStore = create<State>()(
@@ -46,6 +58,17 @@ export const useGlobalStore = create<State>()(
         if (!res) return;
         set((state) => {
           state.formSliderListConfig = res;
+        });
+      },
+      istioConfig: {
+        enabled: false,
+        publicDomains: [],
+        sharedGateway: 'sealos-gateway',
+        enableTracing: false
+      },
+      setIstioConfig(config) {
+        set((state) => {
+          state.istioConfig = config;
         });
       }
     }))

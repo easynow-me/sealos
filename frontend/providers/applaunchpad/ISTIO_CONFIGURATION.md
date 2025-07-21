@@ -10,31 +10,57 @@ AppLaunchpad 现在支持智能 Gateway 优化，能够根据域名类型自动�
 2. **自定义域名** (如 `my-app.example.com`) → 创建用户独立 Gateway
 3. **混合域名** → 智能分析，优化资源配置
 
-## 📋 环境变量配置
+## 📋 配置方法
 
-在前端环境中设置以下环境变量来启用 Istio 模式：
+### 方法一：运行时配置（推荐）
 
-### 1. 基础配置
+通过配置文件启用 Istio 模式，无需重新构建应用即可修改配置。
+
+#### 开发环境
+创建或修改 `frontend/providers/applaunchpad/data/config.yaml.local`：
+
+```yaml
+istio:
+  enabled: true                    # 启用 Istio 模式
+  publicDomains:                  # 公共域名列表
+    - 'cloud.sealos.io'
+    - '*.cloud.sealos.io'
+  sharedGateway: 'sealos-gateway' # 共享 Gateway 名称
+  enableTracing: false            # 启用链路追踪
+```
+
+#### 生产环境
+修改容器内的 `/app/data/config.yaml`：
+
+```yaml
+istio:
+  enabled: true
+  publicDomains:
+    - 'your-domain.com'
+    - '*.your-domain.com'
+  sharedGateway: 'your-shared-gateway'
+  enableTracing: false
+```
+
+完整示例见 `data/config.yaml.istio-example`。
+
+### 方法二：构建时环境变量（旧版）
+
+在构建应用前设置环境变量：
 
 ```bash
 # .env.local 或环境变量
 NEXT_PUBLIC_USE_ISTIO=true
 NEXT_PUBLIC_ENABLE_ISTIO=true
 NEXT_PUBLIC_ISTIO_ENABLED=true
-```
 
-### 2. 高级配置
-
-```bash
-# 启用链路追踪（可选）
+# 高级配置
 NEXT_PUBLIC_ENABLE_TRACING=true
-
-# 公共域名配置（用于域名分类）
 NEXT_PUBLIC_PUBLIC_DOMAINS=cloud.sealos.io
-
-# 共享 Gateway 名称（默认：istio-system/sealos-gateway）
 NEXT_PUBLIC_SHARED_GATEWAY=istio-system/sealos-gateway
 ```
+
+**注意**：构建时配置需要重新构建应用才能修改设置。
 
 ## 🔧 配置文件示例
 
@@ -190,13 +216,28 @@ kubectl get virtualservice --all-namespaces -o json | \
 **症状**：仍然创建 Ingress 资源而非 VirtualService
 
 **解决方案**：
+
+#### 运行时配置检查
+```bash
+# 检查配置文件是否存在
+ls -la /app/data/config.yaml
+
+# 验证配置内容
+cat /app/data/config.yaml | grep -A5 "istio:"
+
+# 重启应用加载新配置
+kubectl rollout restart deployment/applaunchpad
+```
+
+#### 构建时配置检查
 ```bash
 # 检查环境变量是否设置正确
 echo $NEXT_PUBLIC_USE_ISTIO
 echo $NEXT_PUBLIC_ENABLE_ISTIO
 
-# 重启前端应用
-docker restart applaunchpad
+# 重新构建镜像
+npm run build
+docker build -t applaunchpad:istio .
 ```
 
 ### 2. VirtualService 未使用共享 Gateway

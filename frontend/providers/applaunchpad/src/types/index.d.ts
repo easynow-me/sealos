@@ -39,6 +39,12 @@ export type AppConfigType = {
     apiEnabled: boolean;
     gpuEnabled: boolean;
   };
+  istio?: {
+    enabled: boolean;
+    publicDomains?: string[];
+    sharedGateway?: string;
+    enableTracing?: boolean;
+  };
   launchpad: {
     meta: {
       title: string;
@@ -92,4 +98,8 @@ export type EnvResponse = {
   DESKTOP_DOMAIN: string;
   PVC_STORAGE_MAX: number;
   GPU_ENABLED: boolean;
+  ISTIO_ENABLED?: boolean;
+  ISTIO_PUBLIC_DOMAINS?: string[];
+  ISTIO_SHARED_GATEWAY?: string;
+  ISTIO_ENABLE_TRACING?: boolean;
 };

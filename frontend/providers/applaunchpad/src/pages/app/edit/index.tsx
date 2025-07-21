@@ -20,6 +20,7 @@ import {
   generateNetworkingResources,
   getNetworkingMode
 } from '@/utils/deployYaml2Json';
+import { ISTIO_ENABLED, ISTIO_ENABLE_TRACING } from '@/store/static';
 import { serviceSideProps } from '@/utils/i18n';
 import { getErrText, patchYamlList } from '@/utils/tools';
 import { Box, Flex } from '@chakra-ui/react';
@@ -48,11 +49,11 @@ export const formData2Yamls = (
     enableSmartGateway?: boolean;
   }
 ) => {
-  // Determine networking mode from environment or options
+  // Determine networking mode from runtime configuration or options
   const networkingMode = options?.networkingMode || getNetworkingMode({
-    useIstio: process.env.NEXT_PUBLIC_USE_ISTIO === 'true',
-    enableIstio: process.env.NEXT_PUBLIC_ENABLE_ISTIO === 'true',
-    istioEnabled: process.env.NEXT_PUBLIC_ISTIO_ENABLED === 'true'
+    useIstio: ISTIO_ENABLED,
+    enableIstio: ISTIO_ENABLED,
+    istioEnabled: ISTIO_ENABLED
   });
 
   const hasPublicNetworks = data.networks.find((item) => item.openPublicDomain);
@@ -65,7 +66,7 @@ export const formData2Yamls = (
       // Use intelligent Gateway optimization
       const istioResources = generateNetworkingResources(data, 'istio', {
         sharedGateway: options?.enableSmartGateway !== false, // Default to true for smart optimization
-        enableTracing: process.env.NEXT_PUBLIC_ENABLE_TRACING === 'true'
+        enableTracing: ISTIO_ENABLE_TRACING
       });
 
       if (istioResources) {

@@ -107,6 +107,11 @@ export const getServerEnv = (AppConfig: AppConfigType): EnvResponse => {
     SEALOS_USER_DOMAINS: AppConfig.cloud.userDomains || [],
     DESKTOP_DOMAIN: AppConfig.cloud.desktopDomain,
     PVC_STORAGE_MAX: AppConfig.launchpad.pvcStorageMax || 20,
-    GPU_ENABLED: AppConfig.common.gpuEnabled
+    GPU_ENABLED: AppConfig.common.gpuEnabled,
+    // Istio configuration
+    ISTIO_ENABLED: AppConfig.istio?.enabled || false,
+    ISTIO_PUBLIC_DOMAINS: AppConfig.istio?.publicDomains || [],
+    ISTIO_SHARED_GATEWAY: AppConfig.istio?.sharedGateway || 'sealos-gateway',
+    ISTIO_ENABLE_TRACING: AppConfig.istio?.enableTracing || false
   };
 };

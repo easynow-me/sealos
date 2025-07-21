@@ -47,7 +47,7 @@ type AppOwnProps = { config: AppConfigType };
 const MyApp = ({ Component, pageProps, config }: AppProps & AppOwnProps) => {
   const router = useRouter();
   const { i18n } = useTranslation();
-  const { setScreenWidth, loading, setLastRoute, initFormSliderList } = useGlobalStore();
+  const { setScreenWidth, loading, setLastRoute, initFormSliderList, setIstioConfig } = useGlobalStore();
   const { loadUserSourcePrice } = useUserStore();
   const { Loading } = useLoading();
   const [refresh, setRefresh] = useState(false);
@@ -59,8 +59,21 @@ const MyApp = ({ Component, pageProps, config }: AppProps & AppOwnProps) => {
   useEffect(() => {
     const response = createSealosApp();
     (async () => {
-      const { FORM_SLIDER_LIST_CONFIG, DESKTOP_DOMAIN } = await (() => loadInitData())();
+      const { 
+        FORM_SLIDER_LIST_CONFIG, 
+        DESKTOP_DOMAIN,
+        ISTIO_ENABLED,
+        ISTIO_PUBLIC_DOMAINS,
+        ISTIO_SHARED_GATEWAY,
+        ISTIO_ENABLE_TRACING
+      } = await (() => loadInitData())();
       initFormSliderList(FORM_SLIDER_LIST_CONFIG);
+      setIstioConfig({
+        enabled: ISTIO_ENABLED,
+        publicDomains: ISTIO_PUBLIC_DOMAINS,
+        sharedGateway: ISTIO_SHARED_GATEWAY,
+        enableTracing: ISTIO_ENABLE_TRACING
+      });
       loadUserSourcePrice();
 
       try {
