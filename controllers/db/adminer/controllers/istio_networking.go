@@ -82,17 +82,38 @@ func (r *AdminerIstioNetworkingReconciler) buildNetworkingSpec(adminer *adminerv
 	// 构建域名
 	domain := hostname + "." + r.adminerDomain
 
-	// 构建 CORS 源
+	// 构建 CORS 源 - 使用精确的 adminer 域名
 	corsOrigins := []string{}
 	if r.tlsEnabled {
-		corsOrigins = []string{
-			fmt.Sprintf("https://%s", r.adminerDomain),
-			fmt.Sprintf("https://*.%s", r.adminerDomain),
+		// 添加精确的 adminer 域名
+		corsOrigins = append(corsOrigins, fmt.Sprintf("https://adminer.%s", r.adminerDomain))
+		
+		// 如果配置了公共域名，添加它们的 adminer 子域名
+		if r.config != nil && len(r.config.PublicDomains) > 0 {
+			for _, publicDomain := range r.config.PublicDomains {
+				// 处理通配符域名 (如 *.cloud.sealos.io)
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://adminer.%s", baseDomain))
+				} else {
+					// 精确域名
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://adminer.%s", publicDomain))
+				}
+			}
 		}
 	} else {
-		corsOrigins = []string{
-			fmt.Sprintf("http://%s", r.adminerDomain),
-			fmt.Sprintf("http://*.%s", r.adminerDomain),
+		// HTTP 模式
+		corsOrigins = append(corsOrigins, fmt.Sprintf("http://adminer.%s", r.adminerDomain))
+		
+		if r.config != nil && len(r.config.PublicDomains) > 0 {
+			for _, publicDomain := range r.config.PublicDomains {
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://adminer.%s", baseDomain))
+				} else {
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://adminer.%s", publicDomain))
+				}
+			}
 		}
 	}
 
@@ -112,9 +133,9 @@ func (r *AdminerIstioNetworkingReconciler) buildNetworkingSpec(adminer *adminerv
 		// CORS 配置
 		CorsPolicy: &istio.CorsPolicy{
 			AllowOrigins:     corsOrigins,
-			AllowMethods:     []string{"PUT", "GET", "POST", "PATCH", "OPTIONS"},
-			AllowHeaders:     []string{"content-type", "authorization"},
-			AllowCredentials: false,
+			AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"},
+			AllowHeaders:     []string{"content-type", "authorization", "cookie", "x-requested-with"},
+			AllowCredentials: true, // Adminer 需要凭据支持
 		},
 
 		// 自定义头部配置，用于安全策略
