@@ -73,7 +73,7 @@ process.on('uncaughtException', (err) => {
   console.error(`Caught uncaughtException:`, err);
 });
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export default async function handler(_req: NextApiRequest, res: NextApiResponse) {
   try {
     if (!global.AppConfig) {
       const filename =
