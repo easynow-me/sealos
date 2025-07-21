@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -41,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	adminerv1 "github.com/labring/sealos/controllers/db/adminer/api/v1"
+	"github.com/labring/sealos/controllers/pkg/istio"
 	"github.com/labring/sealos/controllers/pkg/utils/label"
 )
 
@@ -127,7 +129,8 @@ type AdminerReconciler struct {
 	image           string
 	secretName      string
 	secretNamespace string
-	istioReconciler *AdminerIstioNetworkingReconciler
+	istioReconciler *AdminerIstioNetworkingReconciler // 保留向后兼容
+	istioHelper     *istio.UniversalIstioNetworkingHelper // 🎯 新增通用助手
 	useIstio        bool
 }
 
@@ -496,7 +499,12 @@ func (r *AdminerReconciler) syncIngress(ctx context.Context, adminer *adminerv1.
 }
 
 func (r *AdminerReconciler) syncIstioNetworking(ctx context.Context, adminer *adminerv1.Adminer, hostname string, recLabels map[string]string) error {
-	// 使用 Istio 网络配置
+	// 🎯 使用智能Gateway的优化网络配置
+	if r.istioHelper != nil {
+		return r.syncOptimizedIstioNetworking(ctx, adminer, hostname, recLabels)
+	}
+
+	// 回退到原有实现（向后兼容）
 	if err := r.istioReconciler.SyncIstioNetworking(ctx, adminer, hostname); err != nil {
 		return err
 	}
@@ -517,6 +525,125 @@ func (r *AdminerReconciler) syncIstioNetworking(ctx context.Context, adminer *ad
 	}
 
 	return nil
+}
+
+// syncOptimizedIstioNetworking 使用智能Gateway的优化网络配置
+func (r *AdminerReconciler) syncOptimizedIstioNetworking(ctx context.Context, adminer *adminerv1.Adminer, hostname string, recLabels map[string]string) error {
+	// 构建域名
+	host := hostname + "." + r.adminerDomain
+	
+	// 🎯 使用通用助手的智能网络配置
+	params := &istio.AppNetworkingParams{
+		Name:        adminer.Name,
+		Namespace:   adminer.Namespace,
+		AppType:     "adminer",
+		Hosts:       []string{host},
+		ServiceName: adminer.Name,
+		ServicePort: 8080,
+		Protocol:    istio.ProtocolHTTP,
+		
+		// 数据库管理器专用配置
+		Timeout: &[]time.Duration{86400 * time.Second}[0], // 24小时超时
+		
+		// CORS 配置
+		CorsPolicy: &istio.CorsPolicy{
+			AllowOrigins:     r.buildCorsOrigins(),
+			AllowMethods:     []string{"PUT", "GET", "POST", "PATCH", "OPTIONS"},
+			AllowHeaders:     []string{"content-type", "authorization"},
+			AllowCredentials: false,
+		},
+		
+		// 安全头部配置
+		Headers: r.buildSecurityHeaders(),
+		
+		// TLS 配置
+		TLSEnabled: r.tlsEnabled,
+		
+		// 标签和注解
+		Labels:      recLabels,
+		Annotations: map[string]string{
+			"sealos.io/converted-from": "adminer-controller",
+			"sealos.io/gateway-type":   "optimized", // 标记使用优化Gateway
+		},
+		
+		// 设置 Owner Reference
+		OwnerObject: adminer,
+	}
+	
+	// 🎯 关键：使用通用助手创建优化的网络配置（自动选择Gateway）
+	if err := r.istioHelper.CreateOrUpdateNetworking(ctx, params); err != nil {
+		return fmt.Errorf("failed to sync optimized istio networking: %w", err)
+	}
+	
+	// 🎯 分析域名需求（展示智能Gateway选择过程）
+	analysis := r.istioHelper.AnalyzeDomainRequirements(params)
+	
+	// 更新 Adminer 状态中的域名和Gateway信息
+	var protocol string
+	if r.tlsEnabled {
+		protocol = protocolHTTPS
+	} else {
+		protocol = protocolHTTP
+	}
+	domain := protocol + host
+	
+	return retryStatusUpdateOnConflict(ctx, r.Client, adminer, func() {
+		adminer.Status.Domain = domain
+		
+		// 🎯 添加Gateway优化状态信息
+		if adminer.Annotations == nil {
+			adminer.Annotations = make(map[string]string)
+		}
+		adminer.Annotations["sealos.io/gateway-type"] = "optimized"
+		adminer.Annotations["sealos.io/domain-type"] = func() string {
+			if analysis.IsPublicDomain {
+				return "public"
+			}
+			return "custom"
+		}()
+		adminer.Annotations["sealos.io/gateway-reference"] = analysis.GatewayReference
+	})
+}
+
+// buildCorsOrigins 构建CORS源
+func (r *AdminerReconciler) buildCorsOrigins() []string {
+	corsOrigins := []string{}
+	if r.tlsEnabled {
+		corsOrigins = []string{
+			fmt.Sprintf("https://%s", r.adminerDomain),
+			fmt.Sprintf("https://*.%s", r.adminerDomain),
+		}
+	} else {
+		corsOrigins = []string{
+			fmt.Sprintf("http://%s", r.adminerDomain),
+			fmt.Sprintf("http://*.%s", r.adminerDomain),
+		}
+	}
+	return corsOrigins
+}
+
+// buildSecurityHeaders 构建安全头部
+func (r *AdminerReconciler) buildSecurityHeaders() map[string]string {
+	headers := make(map[string]string)
+	
+	// 清除 X-Frame-Options，允许 iframe 嵌入
+	headers["X-Frame-Options"] = ""
+	
+	// 设置 Content Security Policy
+	cspValue := fmt.Sprintf("default-src * blob: data: *.%s %s; img-src * data: blob: resource: *.%s %s; connect-src * wss: blob: resource:; style-src 'self' 'unsafe-inline' blob: *.%s %s resource:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: *.%s %s resource: *.baidu.com *.bdstatic.com; frame-src 'self' %s *.%s mailto: tel: weixin: mtt: *.baidu.com; frame-ancestors 'self' https://%s https://*.%s",
+		r.adminerDomain, r.adminerDomain,
+		r.adminerDomain, r.adminerDomain,
+		r.adminerDomain, r.adminerDomain,
+		r.adminerDomain, r.adminerDomain,
+		r.adminerDomain, r.adminerDomain,
+		r.adminerDomain, r.adminerDomain)
+	
+	headers["Content-Security-Policy"] = cspValue
+	
+	// 设置 XSS 保护
+	headers["X-Xss-Protection"] = "1; mode=block"
+	
+	return headers
 }
 
 func (r *AdminerReconciler) syncNginxIngress(ctx context.Context, adminer *adminerv1.Adminer, host string, recLabels map[string]string) error {

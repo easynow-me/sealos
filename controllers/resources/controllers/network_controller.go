@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -827,8 +828,8 @@ func (r *NetworkReconciler) SetupIstioSupport(ctx context.Context) error {
 	// 构建 Istio 网络配置
 	config := r.buildIstioNetworkConfig()
 	
-	// 创建 Istio 网络管理器
-	r.networkingManager = istio.NewNetworkingManager(r.Client, config)
+	// 🎯 使用优化的 Istio 网络管理器
+	r.networkingManager = istio.NewOptimizedNetworkingManager(r.Client, config)
 	
 	// 验证 Istio 安装
 	if err := r.validateIstioInstallation(ctx); err != nil {
@@ -844,37 +845,88 @@ func (r *NetworkReconciler) SetupIstioSupport(ctx context.Context) error {
 	return nil
 }
 
-// buildIstioNetworkConfig 构建 Istio 网络配置
+// buildIstioNetworkConfig 构建 Istio 网络配置（使用智能Gateway优化）
 func (r *NetworkReconciler) buildIstioNetworkConfig() *istio.NetworkConfig {
 	config := istio.DefaultNetworkConfig()
 	
-	// 从环境变量读取配置
+	// 基础域名配置
 	if baseDomain := os.Getenv("ISTIO_BASE_DOMAIN"); baseDomain != "" {
 		config.BaseDomain = baseDomain
 	}
 	
+	// Gateway配置
 	if defaultGateway := os.Getenv("ISTIO_DEFAULT_GATEWAY"); defaultGateway != "" {
 		config.DefaultGateway = defaultGateway
+	} else {
+		config.DefaultGateway = "istio-system/sealos-gateway"
 	}
 	
+	// TLS证书配置
 	if tlsSecret := os.Getenv("ISTIO_TLS_SECRET"); tlsSecret != "" {
 		config.DefaultTLSSecret = tlsSecret
 	}
 	
-	// Resources 控制器用于网络管理，不需要特定的域名模板
-	// 但我们可以设置一些通用的配置
+	// 🎯 新增：公共域名配置（支持智能Gateway选择）
+	r.configurePublicDomains(config)
+	
+	// Resources 控制器用于网络管理，设置通用的域名模板
+	config.DomainTemplates = map[string]string{
+		"resources": "{{.Hash}}.{{.TenantID}}.{{.BaseDomain}}", // 通用资源域名模板
+	}
 	
 	// 检查是否启用 TLS
 	if enableTLS := os.Getenv("ISTIO_ENABLE_TLS"); enableTLS == "false" {
 		config.TLSEnabled = false
+	} else {
+		config.TLSEnabled = true // 默认启用TLS
 	}
 	
 	// 检查是否使用共享 Gateway
 	if sharedGateway := os.Getenv("ISTIO_SHARED_GATEWAY"); sharedGateway == "false" {
 		config.SharedGatewayEnabled = false
+	} else {
+		config.SharedGatewayEnabled = true // 默认启用智能共享Gateway
 	}
 	
 	return config
+}
+
+// configurePublicDomains 配置公共域名（智能Gateway核心配置）
+func (r *NetworkReconciler) configurePublicDomains(config *istio.NetworkConfig) {
+	// 1. 基础域名和子域名
+	if config.BaseDomain != "" {
+		config.PublicDomains = append(config.PublicDomains, config.BaseDomain)
+		config.PublicDomainPatterns = append(config.PublicDomainPatterns, "*."+config.BaseDomain)
+	}
+	
+	// 2. 从环境变量读取额外的公共域名
+	if publicDomains := os.Getenv("ISTIO_PUBLIC_DOMAINS"); publicDomains != "" {
+		domains := strings.Split(publicDomains, ",")
+		for _, domain := range domains {
+			domain = strings.TrimSpace(domain)
+			if domain != "" {
+				config.PublicDomains = append(config.PublicDomains, domain)
+			}
+		}
+	}
+	
+	// 3. 从环境变量读取公共域名模式（支持通配符）
+	if domainPatterns := os.Getenv("ISTIO_PUBLIC_DOMAIN_PATTERNS"); domainPatterns != "" {
+		patterns := strings.Split(domainPatterns, ",")
+		for _, pattern := range patterns {
+			pattern = strings.TrimSpace(pattern)
+			if pattern != "" {
+				config.PublicDomainPatterns = append(config.PublicDomainPatterns, pattern)
+			}
+		}
+	}
+	
+	// 4. 默认公共域名模式（如果没有配置）
+	if len(config.PublicDomains) == 0 && len(config.PublicDomainPatterns) == 0 {
+		// 设置一些常见的公共域名
+		config.PublicDomains = append(config.PublicDomains, "sealos.io", "cloud.sealos.io")
+		config.PublicDomainPatterns = append(config.PublicDomainPatterns, "*.sealos.io", "*.cloud.sealos.io")
+	}
 }
 
 // validateIstioInstallation 验证 Istio 是否已安装

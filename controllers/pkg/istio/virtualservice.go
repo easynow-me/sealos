@@ -545,8 +545,8 @@ func (v *virtualServiceController) isVirtualServiceReady(vs *unstructured.Unstru
 	return true
 }
 
-// CreateOrUpdate 创建或更新 VirtualService（工具方法）
-func (v *virtualServiceController) CreateOrUpdate(ctx context.Context, config *VirtualServiceConfig, owner metav1.Object, scheme *runtime.Scheme) error {
+// CreateOrUpdateWithOwner 创建或更新 VirtualService（支持设置 OwnerReference）
+func (v *virtualServiceController) CreateOrUpdateWithOwner(ctx context.Context, config *VirtualServiceConfig, owner metav1.Object, scheme *runtime.Scheme) error {
 	vs := &unstructured.Unstructured{}
 	vs.SetGroupVersionKind(virtualServiceGVK)
 	vs.SetName(config.Name)

@@ -435,3 +435,51 @@ func makeSafeForDeepCopy(obj interface{}) interface{} {
 		return v
 	}
 }
+
+// CreateOrUpdateWithOwner 创建或更新 Gateway（支持设置 OwnerReference）
+func (g *gatewayController) CreateOrUpdateWithOwner(ctx context.Context, config *GatewayConfig, owner metav1.Object, scheme *runtime.Scheme) error {
+	gateway := &unstructured.Unstructured{}
+	gateway.SetGroupVersionKind(gatewayGVK)
+	gateway.SetName(config.Name)
+	gateway.SetNamespace(config.Namespace)
+
+	result, err := controllerutil.CreateOrUpdate(ctx, g.client, gateway, func() error {
+		// 设置标签
+		labels := gateway.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		for k, val := range config.Labels {
+			labels[k] = val
+		}
+		labels["app.kubernetes.io/managed-by"] = "sealos-istio"
+		labels["app.kubernetes.io/component"] = "networking"
+		gateway.SetLabels(labels)
+
+		// 构建并设置 spec
+		spec := g.buildGatewaySpec(config)
+		// 确保所有值都可以深拷贝
+		safeSpec := makeSafeForDeepCopy(spec)
+		if err := unstructured.SetNestedMap(gateway.Object, safeSpec.(map[string]interface{}), "spec"); err != nil {
+			return fmt.Errorf("failed to set gateway spec: %w", err)
+		}
+
+		// 设置所有者引用
+		if owner != nil && scheme != nil {
+			if err := controllerutil.SetControllerReference(owner, gateway, scheme); err != nil {
+				return fmt.Errorf("failed to set owner reference: %w", err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to create or update gateway: %w", err)
+	}
+
+	// 记录操作结果（注：可以在需要时添加日志）
+	_ = result // 避免未使用变量警告
+
+	return nil
+}

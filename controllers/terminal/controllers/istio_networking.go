@@ -34,11 +34,11 @@ type IstioNetworkingReconciler struct {
 	config           *istio.NetworkConfig
 }
 
-// NewIstioNetworkingReconciler 创建新的 Istio 网络协调器
+// NewIstioNetworkingReconciler 创建新的 Istio 网络协调器（使用优化管理器）
 func NewIstioNetworkingReconciler(client client.Client, config *istio.NetworkConfig) *IstioNetworkingReconciler {
 	return &IstioNetworkingReconciler{
 		Client:            client,
-		networkingManager: istio.NewNetworkingManager(client, config),
+		networkingManager: istio.NewOptimizedNetworkingManager(client, config), // 🎯 使用优化管理器
 		config:            config,
 	}
 }

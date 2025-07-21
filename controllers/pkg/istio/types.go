@@ -20,6 +20,8 @@ import (
 	"context"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -85,6 +87,9 @@ type AppNetworkingSpec struct {
 	// 标签和注解
 	Labels      map[string]string
 	Annotations map[string]string
+
+	// 对象引用（用于设置OwnerReference）
+	OwnerObject metav1.Object
 }
 
 // TLSConfig TLS 配置
@@ -167,6 +172,9 @@ type GatewayController interface {
 
 	// 检查 Gateway 是否存在
 	Exists(ctx context.Context, name, namespace string) (bool, error)
+
+	// 创建或更新 Gateway（支持设置 OwnerReference）
+	CreateOrUpdateWithOwner(ctx context.Context, config *GatewayConfig, owner metav1.Object, scheme *runtime.Scheme) error
 }
 
 // VirtualServiceController VirtualService 控制器接口
@@ -188,6 +196,9 @@ type VirtualServiceController interface {
 
 	// 恢复 VirtualService
 	Resume(ctx context.Context, name, namespace string) error
+
+	// 创建或更新 VirtualService（支持设置 OwnerReference）
+	CreateOrUpdateWithOwner(ctx context.Context, config *VirtualServiceConfig, owner metav1.Object, scheme *runtime.Scheme) error
 }
 
 // Gateway Istio Gateway 资源（简化版本）
@@ -250,7 +261,11 @@ type NetworkConfig struct {
 	// 域名配置
 	DomainTemplates map[string]string
 	ReservedDomains []string
-
+	
+	// 公共域名配置（新增）
+	PublicDomains        []string          // 精确匹配的公共域名列表
+	PublicDomainPatterns []string          // 支持通配符的公共域名模式
+	
 	// 证书配置
 	CertManager string
 	AutoTLS     bool

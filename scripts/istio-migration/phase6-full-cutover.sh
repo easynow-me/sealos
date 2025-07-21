@@ -147,7 +147,7 @@ migrate_existing_ingress() {
     kubectl get ingress --all-namespaces -o yaml > "$BACKUP_DIR/all-ingress-backup.yaml"
     log "INFO" "Backup created at: $BACKUP_DIR/all-ingress-backup.yaml"
     
-    # Get all user namespaces
+    # Get all user namespaces (ns-* namespaces)
     namespaces=$(kubectl get namespaces -o json | jq -r '.items[] | select(.metadata.name | startswith("ns-")) | .metadata.name')
     
     total_ingress=0
@@ -157,11 +157,27 @@ migrate_existing_ingress() {
     for ns in $namespaces; do
         log "INFO" "Processing namespace: $ns"
         
+        # Check if namespace has any ingresses
+        ingress_count=$(kubectl get ingress -n "$ns" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$ingress_count" -eq 0 ]]; then
+            log "INFO" "No ingresses found in namespace: $ns, skipping"
+            continue
+        fi
+        
         # Get all Ingress in namespace
         ingresses=$(kubectl get ingress -n "$ns" -o json | jq -r '.items[].metadata.name')
         
         for ingress in $ingresses; do
             total_ingress=$((total_ingress + 1))
+            
+            # Check if already migrated
+            migration_status=$(kubectl get ingress "$ingress" -n "$ns" -o jsonpath='{.metadata.annotations.sealos\.io/migrated-to-istio}' 2>/dev/null || echo "")
+            if [[ "$migration_status" == "true" ]]; then
+                log "INFO" "Ingress $ns/$ingress already migrated, skipping"
+                migrated_ingress=$((migrated_ingress + 1))
+                continue
+            fi
+            
             log "INFO" "Migrating Ingress: $ns/$ingress"
             
             if [[ "$DRY_RUN" == "true" ]]; then
@@ -173,19 +189,23 @@ migrate_existing_ingress() {
             # Use the converter tool
             if "${SCRIPT_DIR}/../../tools/istio-migration/converter/sealos-ingress-converter" \
                 -namespace "$ns" \
-                -ingress-name "$ingress" \
-                -output-dir "/tmp/istio-resources" \
-                -gateway-name "sealos-gateway" \
-                -apply; then
+                -ingress "$ingress" \
+                -output "/tmp/istio-resources"; then
                 
-                migrated_ingress=$((migrated_ingress + 1))
-                log "SUCCESS" "Migrated Ingress $ns/$ingress"
-                
-                # Add migration annotation
-                kubectl annotate ingress "$ingress" -n "$ns" \
-                    "sealos.io/migrated-to-istio=true" \
-                    "sealos.io/migration-time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-                    --overwrite
+                # Apply the generated YAML files
+                if kubectl apply -f "/tmp/istio-resources/$ns/" 2>/dev/null; then
+                    migrated_ingress=$((migrated_ingress + 1))
+                    log "SUCCESS" "Migrated Ingress $ns/$ingress and applied Istio resources"
+                    
+                    # Add migration annotation
+                    kubectl annotate ingress "$ingress" -n "$ns" \
+                        "sealos.io/migrated-to-istio=true" \
+                        "sealos.io/migration-time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                        --overwrite
+                else
+                    failed_ingress=$((failed_ingress + 1))
+                    log "ERROR" "Failed to apply Istio resources for Ingress $ns/$ingress"
+                fi
             else
                 failed_ingress=$((failed_ingress + 1))
                 log "ERROR" "Failed to migrate Ingress $ns/$ingress"

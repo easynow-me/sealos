@@ -36,11 +36,11 @@ type AdminerIstioNetworkingReconciler struct {
 	adminerDomain     string
 }
 
-// NewAdminerIstioNetworkingReconciler 创建新的 DB Adminer Istio 网络协调器
+// NewAdminerIstioNetworkingReconciler 创建新的 DB Adminer Istio 网络协调器（使用优化管理器）
 func NewAdminerIstioNetworkingReconciler(client client.Client, config *istio.NetworkConfig, tlsEnabled bool, adminerDomain string) *AdminerIstioNetworkingReconciler {
 	return &AdminerIstioNetworkingReconciler{
 		Client:            client,
-		networkingManager: istio.NewNetworkingManager(client, config),
+		networkingManager: istio.NewOptimizedNetworkingManager(client, config), // 🎯 使用优化管理器
 		config:            config,
 		tlsEnabled:        tlsEnabled,
 		adminerDomain:     adminerDomain,

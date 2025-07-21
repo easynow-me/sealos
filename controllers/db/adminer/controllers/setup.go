@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
@@ -58,7 +59,10 @@ func (r *AdminerReconciler) SetupIstioSupport(ctx context.Context) error {
 	// 构建 Istio 网络配置
 	config := r.buildIstioNetworkConfig()
 
-	// 创建 Istio 网络协调器
+	// 🎯 使用通用 Istio 网络助手（替代自定义协调器）
+	r.istioHelper = istio.NewUniversalIstioNetworkingHelperWithScheme(r.Client, r.Scheme, config, "adminer")
+	
+	// 保留旧协调器用于向后兼容和验证
 	r.istioReconciler = NewAdminerIstioNetworkingReconciler(r.Client, config, r.tlsEnabled, r.adminerDomain)
 
 	// 验证 Istio 安装
@@ -66,6 +70,7 @@ func (r *AdminerReconciler) SetupIstioSupport(ctx context.Context) error {
 		logger.Error(err, "Istio validation failed, falling back to Ingress mode for Adminer")
 		r.useIstio = false
 		r.istioReconciler = nil
+		r.istioHelper = nil
 		return nil
 	}
 
@@ -75,31 +80,33 @@ func (r *AdminerReconciler) SetupIstioSupport(ctx context.Context) error {
 	return nil
 }
 
-// buildIstioNetworkConfig 构建 Istio 网络配置
+// buildIstioNetworkConfig 构建 Istio 网络配置（使用智能Gateway优化）
 func (r *AdminerReconciler) buildIstioNetworkConfig() *istio.NetworkConfig {
 	config := istio.DefaultNetworkConfig()
 
-	// 使用 Adminer 控制器的配置
-	if r.adminerDomain != "" {
-		config.BaseDomain = r.adminerDomain
-	}
-
-	// 从环境变量读取配置
+	// 基础域名配置
 	if baseDomain := os.Getenv("ISTIO_BASE_DOMAIN"); baseDomain != "" {
 		config.BaseDomain = baseDomain
 	} else if r.adminerDomain != "" {
 		config.BaseDomain = r.adminerDomain
 	}
 
+	// Gateway配置
 	if defaultGateway := os.Getenv("ISTIO_DEFAULT_GATEWAY"); defaultGateway != "" {
 		config.DefaultGateway = defaultGateway
+	} else {
+		config.DefaultGateway = "istio-system/sealos-gateway"
 	}
 
+	// TLS证书配置
 	if tlsSecret := os.Getenv("ISTIO_TLS_SECRET"); tlsSecret != "" {
 		config.DefaultTLSSecret = tlsSecret
 	} else if r.secretName != "" {
 		config.DefaultTLSSecret = r.secretName
 	}
+
+	// 🎯 新增：公共域名配置（支持智能Gateway选择）
+	r.configurePublicDomains(config)
 
 	// DB Adminer 专用的域名模板
 	config.DomainTemplates["database"] = "db-{{.Hash}}.{{.TenantID}}.{{.BaseDomain}}"
@@ -111,9 +118,51 @@ func (r *AdminerReconciler) buildIstioNetworkConfig() *istio.NetworkConfig {
 	// 检查是否使用共享 Gateway
 	if sharedGateway := os.Getenv("ISTIO_SHARED_GATEWAY"); sharedGateway == "false" {
 		config.SharedGatewayEnabled = false
+	} else {
+		config.SharedGatewayEnabled = true // 默认启用智能共享Gateway
 	}
 
 	return config
+}
+
+// configurePublicDomains 配置公共域名（智能Gateway核心配置）
+func (r *AdminerReconciler) configurePublicDomains(config *istio.NetworkConfig) {
+	// 1. 基础域名和子域名
+	if config.BaseDomain != "" {
+		config.PublicDomains = append(config.PublicDomains, config.BaseDomain)
+		config.PublicDomainPatterns = append(config.PublicDomainPatterns, "*."+config.BaseDomain)
+	}
+
+	// 2. 从环境变量读取额外的公共域名
+	if publicDomains := os.Getenv("ISTIO_PUBLIC_DOMAINS"); publicDomains != "" {
+		domains := strings.Split(publicDomains, ",")
+		for _, domain := range domains {
+			domain = strings.TrimSpace(domain)
+			if domain != "" {
+				config.PublicDomains = append(config.PublicDomains, domain)
+			}
+		}
+	}
+
+	// 3. 从环境变量读取公共域名模式（支持通配符）
+	if domainPatterns := os.Getenv("ISTIO_PUBLIC_DOMAIN_PATTERNS"); domainPatterns != "" {
+		patterns := strings.Split(domainPatterns, ",")
+		for _, pattern := range patterns {
+			pattern = strings.TrimSpace(pattern)
+			if pattern != "" {
+				config.PublicDomainPatterns = append(config.PublicDomainPatterns, pattern)
+			}
+		}
+	}
+
+	// 4. 默认公共域名模式（如果没有配置）
+	if len(config.PublicDomains) == 0 && len(config.PublicDomainPatterns) == 0 {
+		// 使用adminer域名作为默认公共域名
+		if r.adminerDomain != "" {
+			config.PublicDomains = append(config.PublicDomains, r.adminerDomain)
+			config.PublicDomainPatterns = append(config.PublicDomainPatterns, "*."+r.adminerDomain)
+		}
+	}
 }
 
 // IsIstioEnabled 检查是否启用了 Istio 模式

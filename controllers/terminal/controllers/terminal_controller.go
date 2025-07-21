@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -43,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	"github.com/labring/sealos/controllers/pkg/istio"
 	"github.com/labring/sealos/controllers/pkg/utils/label"
 	terminalv1 "github.com/labring/sealos/controllers/terminal/api/v1"
 )
@@ -123,7 +125,8 @@ type TerminalReconciler struct {
 	recorder         record.EventRecorder
 	Config           *rest.Config
 	CtrConfig        *Config
-	istioReconciler  *IstioNetworkingReconciler
+	istioReconciler  *IstioNetworkingReconciler // 保留向后兼容
+	istioHelper      *istio.UniversalIstioNetworkingHelper // 🎯 新增通用助手
 	useIstio         bool
 }
 
@@ -249,7 +252,12 @@ func (r *TerminalReconciler) syncIngress(ctx context.Context, terminal *terminal
 }
 
 func (r *TerminalReconciler) syncIstioNetworking(ctx context.Context, terminal *terminalv1.Terminal, hostname string, recLabels map[string]string) error {
-	// 使用 Istio 网络配置
+	// 🎯 使用智能Gateway的优化网络配置
+	if r.istioHelper != nil {
+		return r.syncOptimizedIstioNetworking(ctx, terminal, hostname, recLabels)
+	}
+
+	// 回退到原有实现（向后兼容）
 	if err := r.istioReconciler.SyncIstioNetworking(ctx, terminal, hostname); err != nil {
 		return err
 	}
@@ -264,6 +272,96 @@ func (r *TerminalReconciler) syncIstioNetworking(ctx context.Context, terminal *
 	}
 	
 	return nil
+}
+
+// syncOptimizedIstioNetworking 使用智能Gateway的优化网络配置
+func (r *TerminalReconciler) syncOptimizedIstioNetworking(ctx context.Context, terminal *terminalv1.Terminal, hostname string, recLabels map[string]string) error {
+	// 构建域名
+	host := hostname + "." + r.CtrConfig.Global.CloudDomain
+	
+	// 🎯 使用通用助手的智能网络配置
+	params := &istio.AppNetworkingParams{
+		Name:        terminal.Name,
+		Namespace:   terminal.Namespace,
+		AppType:     "terminal",
+		Hosts:       []string{host},
+		ServiceName: terminal.Status.ServiceName,
+		ServicePort: 8080,
+		Protocol:    istio.ProtocolWebSocket, // Terminal使用WebSocket协议
+		
+		// Terminal专用配置
+		Timeout:      &[]time.Duration{86400 * time.Second}[0], // 24小时超时，支持长时间SSH会话
+		SecretHeader: terminal.Status.SecretHeader, // Terminal安全头
+		
+		// CORS 配置
+		CorsPolicy: &istio.CorsPolicy{
+			AllowOrigins:     r.buildTerminalCorsOrigins(),
+			AllowMethods:     []string{"PUT", "GET", "POST", "PATCH", "OPTIONS"},
+			AllowHeaders:     []string{"content-type", "authorization"},
+			AllowCredentials: false,
+		},
+		
+		// TLS 配置
+		TLSEnabled: r.CtrConfig.Global.CloudPort == "" || r.CtrConfig.Global.CloudPort == "443",
+		
+		// 标签和注解
+		Labels:      recLabels,
+		Annotations: map[string]string{
+			"sealos.io/converted-from": "terminal-controller",
+			"sealos.io/gateway-type":   "optimized", // 标记使用优化Gateway
+			"sealos.io/protocol":       "websocket", // 标记协议类型
+		},
+		
+		// 设置 Owner Reference
+		OwnerObject: terminal,
+	}
+	
+	// 🎯 关键：使用通用助手创建优化的网络配置（自动选择Gateway）
+	if err := r.istioHelper.CreateOrUpdateNetworking(ctx, params); err != nil {
+		return fmt.Errorf("failed to sync optimized istio networking: %w", err)
+	}
+	
+	// 🎯 分析域名需求（展示智能Gateway选择过程）
+	analysis := r.istioHelper.AnalyzeDomainRequirements(params)
+	
+	// 更新 Terminal 状态中的域名和Gateway信息
+	domain := Protocol + host + r.getPort()
+	
+	return retryStatusUpdateOnConflict(ctx, r.Client, terminal, func() {
+		terminal.Status.Domain = domain
+		
+		// 🎯 添加Gateway优化状态信息
+		if terminal.Annotations == nil {
+			terminal.Annotations = make(map[string]string)
+		}
+		terminal.Annotations["sealos.io/gateway-type"] = "optimized"
+		terminal.Annotations["sealos.io/domain-type"] = func() string {
+			if analysis.IsPublicDomain {
+				return "public"
+			}
+			return "custom"
+		}()
+		terminal.Annotations["sealos.io/gateway-reference"] = analysis.GatewayReference
+	})
+}
+
+// buildTerminalCorsOrigins 构建Terminal的CORS源
+func (r *TerminalReconciler) buildTerminalCorsOrigins() []string {
+	corsOrigins := []string{
+		fmt.Sprintf("https://%s", r.CtrConfig.Global.CloudDomain),
+		fmt.Sprintf("https://*.%s", r.CtrConfig.Global.CloudDomain),
+	}
+	
+	// 添加端口支持（如果配置了自定义端口）
+	if r.CtrConfig.Global.CloudDomain == "cloud.sealos.io" {
+		// 为了兼容性，添加带端口的域名
+		corsOrigins = append(corsOrigins,
+			"https://cloud.sealos.io:443",
+			"https://*.cloud.sealos.io:443",
+		)
+	}
+	
+	return corsOrigins
 }
 
 func (r *TerminalReconciler) syncNginxIngress(ctx context.Context, terminal *terminalv1.Terminal, host string, recLabels map[string]string) error {
