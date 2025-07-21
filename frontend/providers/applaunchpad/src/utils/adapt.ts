@@ -222,7 +222,9 @@ export enum YamlKindEnum {
   Certificate = 'Certificate',
   HorizontalPodAutoscaler = 'HorizontalPodAutoscaler',
   Secret = 'Secret',
-  PersistentVolumeClaim = 'PersistentVolumeClaim'
+  PersistentVolumeClaim = 'PersistentVolumeClaim',
+  VirtualService = 'VirtualService',
+  Gateway = 'Gateway'
 }
 
 // adaptAppDetail function has been moved to server side API call

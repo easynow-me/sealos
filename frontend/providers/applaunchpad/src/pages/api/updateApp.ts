@@ -167,6 +167,58 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             name
           )
       },
+      [YamlKindEnum.VirtualService]: {
+        patch: (jsonPatch: Object) => {
+          // @ts-ignore
+          const name = jsonPatch?.metadata?.name;
+          return k8sCustomObjects.patchNamespacedCustomObject(
+            'networking.istio.io',
+            'v1beta1',
+            namespace,
+            'virtualservices',
+            name,
+            jsonPatch,
+            undefined,
+            undefined,
+            undefined,
+            { headers: { 'Content-type': PatchUtils.PATCH_FORMAT_JSON_MERGE_PATCH } }
+          );
+        },
+        delete: (name) =>
+          k8sCustomObjects.deleteNamespacedCustomObject(
+            'networking.istio.io',
+            'v1beta1',
+            namespace,
+            'virtualservices',
+            name
+          )
+      },
+      [YamlKindEnum.Gateway]: {
+        patch: (jsonPatch: Object) => {
+          // @ts-ignore
+          const name = jsonPatch?.metadata?.name;
+          return k8sCustomObjects.patchNamespacedCustomObject(
+            'networking.istio.io',
+            'v1beta1',
+            namespace,
+            'gateways',
+            name,
+            jsonPatch,
+            undefined,
+            undefined,
+            undefined,
+            { headers: { 'Content-type': PatchUtils.PATCH_FORMAT_JSON_MERGE_PATCH } }
+          );
+        },
+        delete: (name) =>
+          k8sCustomObjects.deleteNamespacedCustomObject(
+            'networking.istio.io',
+            'v1beta1',
+            namespace,
+            'gateways',
+            name
+          )
+      },
       [YamlKindEnum.HorizontalPodAutoscaler]: {
         patch: (jsonPatch: Object) =>
           k8sAutoscaling.patchNamespacedHorizontalPodAutoscaler(

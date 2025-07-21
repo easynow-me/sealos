@@ -56,7 +56,9 @@
       "Bash(fi)",
       "Bash(done)",
       "Bash(/dev/null)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(./sealos-ingress-converter:*)",
+      "Bash($CONVERTER:*)"
     ],
     "deny": []
   }

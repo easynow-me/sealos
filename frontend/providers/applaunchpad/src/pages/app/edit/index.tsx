@@ -16,7 +16,9 @@ import {
   json2HPA,
   json2Ingress,
   json2Secret,
-  json2Service
+  json2Service,
+  generateNetworkingResources,
+  getNetworkingMode
 } from '@/utils/deployYaml2Json';
 import { serviceSideProps } from '@/utils/i18n';
 import { getErrText, patchYamlList } from '@/utils/tools';
@@ -40,56 +42,94 @@ const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz', 12);
 const ErrorModal = dynamic(() => import('./components/ErrorModal'));
 
 export const formData2Yamls = (
-  data: AppEditType
-  // handleType: 'edit' | 'create' = 'create',
-  // crYamlList?: DeployKindsType[]
-) => [
-  {
-    filename: 'service.yaml',
-    value: json2Service(data)
-  },
-  data.kind === 'statefulset' || data.storeList?.length > 0
-    ? {
-        filename: 'statefulset.yaml',
-        value: json2DeployCr(data, 'statefulset')
+  data: AppEditType,
+  options?: {
+    networkingMode?: 'ingress' | 'istio';
+    enableSmartGateway?: boolean;
+  }
+) => {
+  // Determine networking mode from environment or options
+  const networkingMode = options?.networkingMode || getNetworkingMode({
+    useIstio: process.env.NEXT_PUBLIC_USE_ISTIO === 'true',
+    enableIstio: process.env.NEXT_PUBLIC_ENABLE_ISTIO === 'true',
+    istioEnabled: process.env.NEXT_PUBLIC_ISTIO_ENABLED === 'true'
+  });
+
+  const hasPublicNetworks = data.networks.find((item) => item.openPublicDomain);
+  
+  // Generate networking resources based on mode
+  const getNetworkingResources = () => {
+    if (!hasPublicNetworks) return [];
+
+    if (networkingMode === 'istio') {
+      // Use intelligent Gateway optimization
+      const istioResources = generateNetworkingResources(data, 'istio', {
+        sharedGateway: options?.enableSmartGateway !== false, // Default to true for smart optimization
+        enableTracing: process.env.NEXT_PUBLIC_ENABLE_TRACING === 'true'
+      });
+
+      if (istioResources) {
+        return [{
+          filename: 'istio-networking.yaml',
+          value: istioResources
+        }];
       }
-    : {
-        filename: 'deployment.yaml',
-        value: json2DeployCr(data, 'deployment')
-      },
-  ...(data.configMapList.length > 0
-    ? [
-        {
-          filename: 'configmap.yaml',
-          value: json2ConfigMap(data)
-        }
-      ]
-    : []),
-  ...(data.networks.find((item) => item.openPublicDomain)
-    ? [
-        {
+    } else {
+      // Fallback to traditional Ingress
+      const ingressYaml = json2Ingress(data);
+      if (ingressYaml) {
+        return [{
           filename: 'ingress.yaml',
-          value: json2Ingress(data)
+          value: ingressYaml
+        }];
+      }
+    }
+
+    return [];
+  };
+
+  return [
+    {
+      filename: 'service.yaml',
+      value: json2Service(data)
+    },
+    data.kind === 'statefulset' || data.storeList?.length > 0
+      ? {
+          filename: 'statefulset.yaml',
+          value: json2DeployCr(data, 'statefulset')
         }
-      ]
-    : []),
-  ...(data.hpa.use
-    ? [
-        {
-          filename: 'hpa.yaml',
-          value: json2HPA(data)
-        }
-      ]
-    : []),
-  ...(data.secret.use
-    ? [
-        {
-          filename: 'secret.yaml',
-          value: json2Secret(data)
-        }
-      ]
-    : [])
-];
+      : {
+          filename: 'deployment.yaml',
+          value: json2DeployCr(data, 'deployment')
+        },
+    ...(data.configMapList.length > 0
+      ? [
+          {
+            filename: 'configmap.yaml',
+            value: json2ConfigMap(data)
+          }
+        ]
+      : []),
+    // Use smart networking resources generation
+    ...getNetworkingResources(),
+    ...(data.hpa.use
+      ? [
+          {
+            filename: 'hpa.yaml',
+            value: json2HPA(data)
+          }
+        ]
+      : []),
+    ...(data.secret.use
+      ? [
+          {
+            filename: 'secret.yaml',
+            value: json2Secret(data)
+          }
+        ]
+      : [])
+  ];
+};
 
 const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) => {
   const { t } = useTranslation();
