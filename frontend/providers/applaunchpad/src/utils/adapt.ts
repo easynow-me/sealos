@@ -413,36 +413,85 @@ export const adaptAppDetail = (configs: DeployKindsType[], envs: EnvResponse): A
         const service = allServices.find((svc) =>
           svc.spec?.ports?.some((port) => port.port === item.port)
         );
+        
+        // Check for traditional Ingress first
         const ingress = configs.find(
           (config: any) =>
             config.kind === YamlKindEnum.Ingress &&
             config?.spec?.rules?.[0]?.http?.paths?.[0]?.backend?.service?.port?.number === item.port
         ) as V1Ingress;
-        const domain = ingress?.spec?.rules?.[0].host || '';
-
-        const appProtocol =
-          (ingress?.metadata?.annotations?.[
+        
+        // Check for Istio VirtualService if no Ingress found
+        let virtualService: any = null;
+        let gateway: any = null;
+        let domain = '';
+        let appProtocol: ApplicationProtocolType = 'HTTP';
+        let networkName = '';
+        
+        if (ingress) {
+          // Traditional Ingress mode
+          domain = ingress?.spec?.rules?.[0].host || '';
+          appProtocol = (ingress?.metadata?.annotations?.[
             'nginx.ingress.kubernetes.io/backend-protocol'
           ] as ApplicationProtocolType) || 'HTTP';
+          networkName = ingress?.metadata?.name || '';
+        } else {
+          // Istio mode - look for VirtualService
+          virtualService = configs.find(
+            (config: any) => {
+              if (config.kind !== YamlKindEnum.VirtualService) return false;
+              // Check if VirtualService routes to this service port
+              const http = config.spec?.http || [];
+              return http.some((route: any) => {
+                const destinations = route.route || [];
+                return destinations.some((dest: any) => {
+                  const svcName = dest.destination?.host?.split('.')[0];
+                  return svcName === service?.metadata?.name && 
+                         dest.destination?.port?.number === item.port;
+                });
+              });
+            }
+          );
+          
+          if (virtualService) {
+            // Get domain from VirtualService hosts
+            domain = virtualService.spec?.hosts?.[0] || '';
+            // Get associated gateway if exists
+            const gatewayNames = virtualService.spec?.gateways || [];
+            if (gatewayNames.length > 0 && !gatewayNames.includes('mesh')) {
+              gateway = configs.find(
+                (config: any) => 
+                  config.kind === YamlKindEnum.Gateway && 
+                  gatewayNames.includes(config.metadata?.name)
+              );
+            }
+            // Extract app protocol from VirtualService if available
+            appProtocol = virtualService.metadata?.labels?.['app.kubernetes.io/protocol'] || 'HTTP';
+            networkName = virtualService?.metadata?.name || '';
+          }
+        }
 
         const protocol = (item?.protocol || 'TCP') as TransportProtocolType;
 
         const isCustomDomain =
+          domain &&
           !domain.endsWith(envs.SEALOS_DOMAIN) &&
           !envs.SEALOS_USER_DOMAINS.some((item) => domain.endsWith(item.name));
 
+        const hasPublicAccess = !!(ingress || virtualService);
+
         return {
           serviceName: service?.metadata?.name || '',
-          networkName: ingress?.metadata?.name || '',
+          networkName: networkName,
           portName: item.name || '',
           port: item.port,
           nodePort: item?.nodePort,
           openNodePort: !!item?.nodePort,
           protocol: protocol,
           appProtocol: appProtocol,
-          openPublicDomain: !!ingress,
+          openPublicDomain: hasPublicAccess,
           publicDomain: isCustomDomain
-            ? ingress?.metadata?.labels?.[publicDomainKey] || ''
+            ? (ingress?.metadata?.labels?.[publicDomainKey] || virtualService?.metadata?.labels?.[publicDomainKey] || '')
             : domain.split('.')[0],
           customDomain: isCustomDomain ? domain : '',
           domain: isCustomDomain

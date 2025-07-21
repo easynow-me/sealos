@@ -20,7 +20,7 @@ import {
   generateNetworkingResources,
   getNetworkingMode
 } from '@/utils/deployYaml2Json';
-import { ISTIO_ENABLED, ISTIO_ENABLE_TRACING, ISTIO_PUBLIC_DOMAINS, ISTIO_SHARED_GATEWAY } from '@/store/static';
+import { ISTIO_ENABLED, ISTIO_ENABLE_TRACING } from '@/store/static';
 import { serviceSideProps } from '@/utils/i18n';
 import { patchYamlList } from '@/utils/tools';
 import { Box, Flex } from '@chakra-ui/react';
@@ -42,52 +42,100 @@ const nanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz', 12);
 
 const ErrorModal = dynamic(() => import('./components/ErrorModal'));
 
-// Helper function to determine if a domain is public
-const isPublicDomain = (domain: string): boolean => {
-  if (!ISTIO_PUBLIC_DOMAINS || ISTIO_PUBLIC_DOMAINS.length === 0) {
-    return false;
-  }
-  
-  // Check if the domain matches any public domain patterns
-  return ISTIO_PUBLIC_DOMAINS.some(publicDomain => {
-    // Handle wildcard domains (e.g., *.cloud.sealos.io)
-    if (publicDomain.startsWith('*.')) {
-      const baseDomain = publicDomain.substring(2);
-      return domain === baseDomain || domain.endsWith(`.${baseDomain}`);
+// Helper function to create domain checker with istioConfig
+const createDomainChecker = (istioPublicDomains: string[]) => {
+  return (domain: string): boolean => {
+    console.log('isPublicDomain check:', {
+      domain,
+      istioPublicDomains,
+      hasPublicDomains: istioPublicDomains?.length > 0
+    });
+    
+    if (!istioPublicDomains || istioPublicDomains.length === 0) {
+      console.warn('No ISTIO_PUBLIC_DOMAINS configured');
+      return false;
     }
-    // Exact match
-    return domain === publicDomain;
-  });
+    
+    // Check if the domain matches any public domain patterns
+    const isPublic = istioPublicDomains.some(publicDomain => {
+      // Handle wildcard domains (e.g., *.cloud.sealos.io)
+      if (publicDomain.startsWith('*.')) {
+        const baseDomain = publicDomain.substring(2);
+        const matches = domain === baseDomain || domain.endsWith(`.${baseDomain}`);
+        if (matches) {
+          console.log(`Domain ${domain} matches wildcard pattern ${publicDomain}`);
+        }
+        return matches;
+      }
+      // Exact match
+      const exactMatch = domain === publicDomain;
+      if (exactMatch) {
+        console.log(`Domain ${domain} exactly matches ${publicDomain}`);
+      }
+      return exactMatch;
+    });
+    
+    console.log(`Domain ${domain} is ${isPublic ? 'PUBLIC' : 'CUSTOM'}`);
+    return isPublic;
+  };
 };
 
-// Helper function to determine gateway options based on network configuration
-const getGatewayOptions = (data: AppEditType) => {
-  if (!ISTIO_ENABLED) {
-    return {
-      networkingMode: 'ingress' as const,
-      enableSmartGateway: false
-    };
-  }
-
-  // Check if any network uses custom domains
-  const hasCustomDomains = data.networks?.some(network => 
-    network.openPublicDomain && network.customDomain
-  );
+// Helper function to create gateway options getter with istioConfig
+const createGatewayOptionsGetter = (istioConfig: {
+  enabled: boolean;
+  publicDomains: string[];
+  sharedGateway: string;
+  enableTracing: boolean;
+}) => {
+  const isPublicDomain = createDomainChecker(istioConfig.publicDomains);
   
-  // Check if all networks use public domains
-  const allPublicDomains = data.networks?.every(network => {
-    if (!network.openPublicDomain) return true; // Skip non-public networks
+  return (data: AppEditType) => {
+    console.log('getGatewayOptions called with:', {
+      networks: data.networks,
+      istioConfig
+    });
     
-    const fullDomain = network.customDomain || `${network.publicDomain}.${network.domain}`;
-    return isPublicDomain(fullDomain);
-  });
+    if (!istioConfig.enabled) {
+      console.log('Istio not enabled, using ingress mode');
+      return {
+        networkingMode: 'ingress' as const,
+        enableSmartGateway: false
+      };
+    }
 
-  return {
-    networkingMode: 'istio' as const,
-    enableSmartGateway: true,
-    // Use shared gateway only if all domains are public
-    useSharedGateway: !hasCustomDomains && allPublicDomains,
-    sharedGatewayName: ISTIO_SHARED_GATEWAY
+    // Check if any network uses custom domains
+    const hasCustomDomains = data.networks?.some(network => 
+      network.openPublicDomain && network.customDomain
+    );
+    
+    console.log('hasCustomDomains:', hasCustomDomains);
+    
+    // Check if all networks use public domains
+    const allPublicDomains = data.networks?.every(network => {
+      if (!network.openPublicDomain) return true; // Skip non-public networks
+      
+      const fullDomain = network.customDomain || `${network.publicDomain}.${network.domain}`;
+      console.log('Checking network:', {
+        publicDomain: network.publicDomain,
+        customDomain: network.customDomain,
+        domain: network.domain,
+        fullDomain
+      });
+      return isPublicDomain(fullDomain);
+    });
+
+    console.log('allPublicDomains:', allPublicDomains);
+
+    const result = {
+      networkingMode: 'istio' as const,
+      enableSmartGateway: true,
+      // Use shared gateway only if all domains are public
+      useSharedGateway: !hasCustomDomains && allPublicDomains,
+      sharedGatewayName: istioConfig.sharedGateway
+    };
+    
+    console.log('Gateway options result:', result);
+    return result;
   };
 };
 
@@ -96,6 +144,12 @@ export const formData2Yamls = (
   options?: {
     networkingMode?: 'ingress' | 'istio';
     enableSmartGateway?: boolean;
+    istioConfig?: {
+      enabled: boolean;
+      publicDomains: string[];
+      sharedGateway: string;
+      enableTracing: boolean;
+    };
   }
 ) => {
   // Determine networking mode from runtime configuration or options
@@ -113,11 +167,19 @@ export const formData2Yamls = (
 
     if (networkingMode === 'istio') {
       // Use intelligent Gateway optimization
+      const getGatewayOptions = options?.istioConfig 
+        ? createGatewayOptionsGetter(options.istioConfig)
+        : createGatewayOptionsGetter({
+            enabled: ISTIO_ENABLED,
+            publicDomains: [],
+            sharedGateway: 'sealos-gateway',
+            enableTracing: false
+          });
       const gatewayOptions = getGatewayOptions(data);
       const istioResources = generateNetworkingResources(data, 'istio', {
-        sharedGateway: gatewayOptions.useSharedGateway,
-        sharedGatewayName: gatewayOptions.sharedGatewayName,
-        enableTracing: ISTIO_ENABLE_TRACING
+        sharedGateway: gatewayOptions.networkingMode === 'istio' ? gatewayOptions.useSharedGateway : false,
+        sharedGatewayName: gatewayOptions.networkingMode === 'istio' ? gatewayOptions.sharedGatewayName : 'sealos-gateway',
+        enableTracing: options?.istioConfig?.enableTracing || ISTIO_ENABLE_TRACING
       });
 
       if (istioResources) {
@@ -193,7 +255,7 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
   const router = useRouter();
   const [forceUpdate, setForceUpdate] = useState(false);
   const { setAppDetail } = useAppStore();
-  const { screenWidth, formSliderListConfig } = useGlobalStore();
+  const { screenWidth, formSliderListConfig, istioConfig } = useGlobalStore();
   const { userSourcePrice, loadUserSourcePrice } = useUserStore();
   const { title, applyBtnText, applyMessage, applySuccess, applyError } = editModeMap(!!appName);
   const [yamlList, setYamlList] = useState<YamlItemType[]>([]);
@@ -362,14 +424,22 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
         if (!res) return;
         console.log(res, 'init res');
         oldAppEditData.current = res;
-        formOldYamls.current = formData2Yamls(res, getGatewayOptions(res));
+        const initialGatewayOptions = createGatewayOptionsGetter(istioConfig)(res);
+        formOldYamls.current = formData2Yamls(res, {
+          ...initialGatewayOptions,
+          istioConfig
+        });
         crOldYamls.current = res.crYamlList;
 
         setDefaultStorePathList(res.storeList.map((item) => item.path));
         setDefaultGpuSource(res.gpu);
         formHook.reset(adaptEditAppData(res));
         setAlready(true);
-        setYamlList(formData2Yamls(realTimeForm.current, getGatewayOptions(realTimeForm.current)));
+        const currentGatewayOptions = createGatewayOptionsGetter(istioConfig)(realTimeForm.current);
+        setYamlList(formData2Yamls(realTimeForm.current, {
+          ...currentGatewayOptions,
+          istioConfig
+        }));
       },
       onError(err) {
         toast({
@@ -386,7 +456,11 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
   useEffect(() => {
     if (tabType === 'yaml') {
       try {
-        setYamlList(formData2Yamls(realTimeForm.current, getGatewayOptions(realTimeForm.current)));
+        const gatewayOptions = createGatewayOptionsGetter(istioConfig)(realTimeForm.current);
+        setYamlList(formData2Yamls(realTimeForm.current, {
+          ...gatewayOptions,
+          istioConfig
+        }));
       } catch (error) {}
     }
   }, [router.query.name, tabType]);
@@ -447,7 +521,11 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
           applyBtnText={applyBtnText}
           applyCb={() => {
             formHook.handleSubmit(async (data) => {
-              const parseYamls = formData2Yamls(data, getGatewayOptions(data));
+              const gatewayOptions = createGatewayOptionsGetter(istioConfig)(data);
+              const parseYamls = formData2Yamls(data, {
+                ...gatewayOptions,
+                istioConfig
+              });
               setYamlList(parseYamls);
 
               // gpu inventory check
@@ -494,6 +572,17 @@ const EditApp = ({ appName, tabType }: { appName?: string; tabType: string }) =>
                     });
                   }
                 } catch (error: any) {
+                  console.error('Permission check failed:', error);
+                  
+                  // Handle authentication errors
+                  if (error?.code === 401 || error?.message?.includes('unAuthorization')) {
+                    return toast({
+                      status: 'error',
+                      title: t('Authentication failed'),
+                      description: t('Please refresh the page and login again')
+                    });
+                  }
+                  
                   return toast({
                     status: 'warning',
                     title: error?.message || 'Check Error'

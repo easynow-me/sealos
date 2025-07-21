@@ -58,7 +58,7 @@ export async function GetAppByAppName({
   appName,
   req
 }: { appName: string } & { req: NextApiRequest }) {
-  const { k8sApp, k8sCore, k8sNetworkingApp, k8sAutoscaling, namespace } = await getK8s({
+  const { k8sApp, k8sCore, k8sNetworkingApp, k8sAutoscaling, k8sCustomObjects, namespace } = await getK8s({
     kubeconfig: await authSession(req.headers)
   });
 
@@ -103,7 +103,49 @@ export async function GetAppByAppName({
         }))
       })),
     k8sCore.readNamespacedSecret(appName, namespace),
-    k8sAutoscaling.readNamespacedHorizontalPodAutoscaler(appName, namespace)
+    k8sAutoscaling.readNamespacedHorizontalPodAutoscaler(appName, namespace),
+    // Fetch Istio VirtualService resources
+    k8sCustomObjects
+      .listNamespacedCustomObject(
+        'networking.istio.io',
+        'v1beta1',
+        namespace,
+        'virtualservices',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        `${appDeployKey}=${appName}`
+      )
+      .then((res: any) => ({
+        body: res.body.items.map((item: any) => ({
+          ...item,
+          apiVersion: 'networking.istio.io/v1beta1',
+          kind: 'VirtualService'
+        }))
+      }))
+      .catch(() => ({ body: [] })), // Return empty array if CRD doesn't exist
+    // Fetch Istio Gateway resources
+    k8sCustomObjects
+      .listNamespacedCustomObject(
+        'networking.istio.io',
+        'v1beta1',
+        namespace,
+        'gateways',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        `${appDeployKey}=${appName}`
+      )
+      .then((res: any) => ({
+        body: res.body.items.map((item: any) => ({
+          ...item,
+          apiVersion: 'networking.istio.io/v1beta1',
+          kind: 'Gateway'
+        }))
+      }))
+      .catch(() => ({ body: [] })) // Return empty array if CRD doesn't exist
   ]);
 
   return response;

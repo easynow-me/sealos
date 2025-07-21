@@ -21,9 +21,13 @@ request.interceptors.request.use(
     }
     let _headers: AxiosHeaders = config.headers;
 
+    const kubeConfig = getUserKubeConfig();
+    if (!kubeConfig) {
+      console.error('No kubeconfig found in session');
+    }
     _headers['Authorization'] = config.headers.Authorization
       ? config.headers.Authorization
-      : encodeURIComponent(getUserKubeConfig());
+      : encodeURIComponent(kubeConfig);
     if (!config.headers || config.headers['Content-Type'] === '') {
       _headers['Content-Type'] = 'application/json';
     }
@@ -49,6 +53,16 @@ request.interceptors.response.use(
       });
     }
 
+    // Handle authentication errors specifically
+    if (data.code === 401) {
+      const authError = {
+        code: 401,
+        message: data.message || 'Authentication failed',
+        error: data.error
+      };
+      return Promise.reject(authError);
+    }
+    
     if (data.code !== ResponseCode.SUCCESS) {
       return Promise.reject(data);
     }

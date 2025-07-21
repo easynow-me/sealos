@@ -10,6 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const { appName } = req.query as { appName: string };
     console.log('checkPermission - request query:', req.query);
     console.log('checkPermission - appName:', appName);
+    console.log('checkPermission - headers:', req.headers?.authorization ? 'present' : 'missing');
     
     if (!appName) {
       return jsonRes(res, {
@@ -18,8 +19,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       });
     }
 
+    let kubeconfig: string;
+    try {
+      kubeconfig = await authSession(req.headers);
+    } catch (authError) {
+      console.error('Auth error:', authError);
+      return jsonRes(res, {
+        code: 401,
+        error: 'Authentication failed',
+        message: 'Invalid or missing authorization header'
+      });
+    }
+
     const { k8sApp, namespace } = await getK8s({
-      kubeconfig: await authSession(req.headers)
+      kubeconfig
     });
 
     const patchBody = {
