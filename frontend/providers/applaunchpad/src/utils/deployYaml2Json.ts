@@ -646,6 +646,7 @@ export const generateNetworkingResources = (
     sharedGateway?: boolean;
     sharedGatewayName?: string;
     enableTracing?: boolean;
+    publicDomains?: string[];
   }
 ) => {
   const hasPublicNetworks = data.networks.some(network => network.openPublicDomain && !network.openNodePort);

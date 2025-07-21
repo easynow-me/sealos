@@ -60,7 +60,7 @@ export const json2Gateway = (data: AppEditType, gatewayName?: string) => {
   return yaml.dump(gateway);
 };
 
-export const json2VirtualService = (data: AppEditType, gatewayName?: string) => {
+export const json2VirtualService = (data: AppEditType, gatewayName?: string, options?: { publicDomains?: string[] }) => {
   const openNetworks = data.networks.filter((item) => item.openPublicDomain && !item.openNodePort);
   
   if (openNetworks.length === 0) {
@@ -132,6 +132,31 @@ export const json2VirtualService = (data: AppEditType, gatewayName?: string) => 
 
     // Build CORS policy
     const getCorsPolicy = () => {
+      // Check if this is an Adminer application
+      const isAdminer = data.appName.toLowerCase().includes('adminer');
+      
+      if (isAdminer && options?.publicDomains && options.publicDomains.length > 0) {
+        // Special CORS policy for Adminer with specific allowed origins
+        const allowOrigins = options.publicDomains.map(domain => {
+          // Handle wildcard domains (e.g., *.cloud.sealos.io)
+          if (domain.startsWith('*.')) {
+            const baseDomain = domain.substring(2);
+            return { exact: `https://adminer.${baseDomain}` };
+          }
+          // For exact domains
+          return { exact: `https://adminer.${domain}` };
+        });
+        
+        return {
+          allowOrigins,
+          allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+          allowHeaders: ['content-type', 'authorization', 'upgrade', 'connection'],
+          allowCredentials: true, // Adminer may need credentials
+          maxAge: '24h'
+        };
+      }
+      
+      // Default CORS policy for non-Adminer apps
       return {
         allowOrigins: [
           {
@@ -221,10 +246,12 @@ export const json2IstioResources = (
   options?: {
     gatewayName?: string;
     sharedGateway?: boolean;
+    sharedGatewayName?: string;
     enableTracing?: boolean;
+    publicDomains?: string[];
   }
 ) => {
-  const { gatewayName, sharedGateway = false, enableTracing = false } = options || {};
+  const { gatewayName, sharedGateway = false, sharedGatewayName, enableTracing = false, publicDomains } = options || {};
   
   const openNetworks = data.networks.filter((item) => item.openPublicDomain && !item.openNodePort);
   
@@ -243,7 +270,9 @@ export const json2IstioResources = (
   }
 
   // Add VirtualServices
-  const virtualServiceYaml = json2VirtualService(data, gatewayName);
+  // Use sharedGatewayName when in shared gateway mode
+  const effectiveGatewayName = sharedGateway && sharedGatewayName ? sharedGatewayName : gatewayName;
+  const virtualServiceYaml = json2VirtualService(data, effectiveGatewayName, options);
   if (virtualServiceYaml) {
     results.push(virtualServiceYaml);
   }

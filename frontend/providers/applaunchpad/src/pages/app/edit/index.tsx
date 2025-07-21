@@ -179,7 +179,8 @@ export const formData2Yamls = (
       const istioResources = generateNetworkingResources(data, 'istio', {
         sharedGateway: gatewayOptions.networkingMode === 'istio' ? gatewayOptions.useSharedGateway : false,
         sharedGatewayName: gatewayOptions.networkingMode === 'istio' ? gatewayOptions.sharedGatewayName : 'sealos-gateway',
-        enableTracing: options?.istioConfig?.enableTracing || ISTIO_ENABLE_TRACING
+        enableTracing: options?.istioConfig?.enableTracing || ISTIO_ENABLE_TRACING,
+        publicDomains: options?.istioConfig?.publicDomains || []
       });
 
       if (istioResources) {
