@@ -56,6 +56,8 @@ spec:
               value: {{ .cloudDomain }}
             - name: KEEPALIVED
               value: {{ .keepalived }}
+            - name: USE_ISTIO
+              value: "{{ if .useIstio }}true{{ else }}false{{ end }}"
           # do not modify this image, it is used for CI/CD
           image: ghcr.io/labring/sealos-terminal-frontend:latest
           imagePullPolicy: Always

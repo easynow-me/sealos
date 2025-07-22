@@ -31,7 +31,8 @@ export const generateTerminalTemplate = (form: TerminalForm): string => {
       apiServer: 'https://kubernetes.default.svc.cluster.local:443',
       ttyImage: process.env.TTYD_IMAGE,
       replicas: 1,
-      keepalived: process.env.KEEPALIVED
+      keepalived: process.env.KEEPALIVED,
+      ingressType: process.env.USE_ISTIO === 'true' ? 'istio' : 'nginx'
     }
   };
 

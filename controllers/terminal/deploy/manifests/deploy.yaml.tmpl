@@ -60,6 +60,7 @@ spec:
                 default: nginx
                 enum:
                 - nginx
+                - istio
                 type: string
               keepalived:
                 type: string
@@ -251,6 +252,42 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - virtualservices
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - gateways
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.istio.io
+  resources:
+  - destinationrules
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -422,6 +459,19 @@ spec:
         - --config-file-path=/config.yaml
         command:
         - /manager
+        env:
+        - name: USE_ISTIO
+          value: "{{ if .useIstio }}true{{ else }}false{{ end }}"
+        - name: ISTIO_BASE_DOMAIN
+          value: "{{ .cloudDomain }}"
+        - name: ISTIO_DEFAULT_GATEWAY
+          value: "istio-system/sealos-gateway"
+        - name: ISTIO_TLS_SECRET
+          value: "{{ .wildcardCertSecretName }}"
+        - name: ISTIO_ENABLE_TLS
+          value: "true"
+        - name: ISTIO_SHARED_GATEWAY
+          value: "true"
         image: ghcr.io/labring/sealos-terminal-controller:latest
         imagePullPolicy: Always
         volumeMounts:
