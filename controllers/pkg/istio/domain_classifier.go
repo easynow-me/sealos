@@ -230,18 +230,19 @@ func (dc *DomainClassifier) BuildOptimizedVirtualServiceConfig(spec *AppNetworki
 	}
 	
 	config := &VirtualServiceConfig{
-		Name:        fmt.Sprintf("%s-vs", spec.Name),
-		Namespace:   spec.Namespace,
-		Hosts:       spec.Hosts,
-		Gateways:    gateways, // 智能选择的Gateway列表
-		Protocol:    spec.Protocol,
-		ServiceName: spec.ServiceName,
-		ServicePort: spec.ServicePort,
-		Timeout:     spec.Timeout,
-		Retries:     spec.Retries,
-		CorsPolicy:  spec.CorsPolicy,
-		Headers:     spec.Headers,
-		Labels:      buildVirtualServiceLabels(spec, classification),
+		Name:            fmt.Sprintf("%s-vs", spec.Name),
+		Namespace:       spec.Namespace,
+		Hosts:           spec.Hosts,
+		Gateways:        gateways, // 智能选择的Gateway列表
+		Protocol:        spec.Protocol,
+		ServiceName:     spec.ServiceName,
+		ServicePort:     spec.ServicePort,
+		Timeout:         spec.Timeout,
+		Retries:         spec.Retries,
+		CorsPolicy:      spec.CorsPolicy,
+		Headers:         spec.Headers,
+		ResponseHeaders: spec.ResponseHeaders, // 添加响应头部支持
+		Labels:          buildVirtualServiceLabels(spec, classification),
 	}
 	
 	return config
