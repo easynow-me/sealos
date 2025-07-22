@@ -15,6 +15,7 @@ export default function Index(props: ServiceEnv) {
   const { setSession, isUserLogin } = useSessionStore();
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionReady, setSessionReady] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
@@ -26,8 +27,10 @@ export default function Index(props: ServiceEnv) {
       try {
         const result = await sealosApp.getSession();
         setSession(result);
+        setSessionReady(true);
       } catch (error) {
         console.log('App is not running in desktop');
+        setSessionReady(true); // Set ready even on error for development
       }
     };
     initApp();
@@ -68,7 +71,7 @@ export default function Index(props: ServiceEnv) {
       }
     },
     refetchInterval: url === '' ? 500 : false,
-    enabled: url === ''
+    enabled: url === '' && sessionReady
   });
 
   if (isLoading) {
