@@ -274,21 +274,21 @@ func (v *virtualServiceController) buildHTTPRoutes(config *VirtualServiceConfig)
 	// 添加头部配置（请求和响应）
 	if len(config.Headers) > 0 || len(config.ResponseHeaders) > 0 {
 		headers := map[string]interface{}{}
-		
+
 		// 设置请求头部
 		if len(config.Headers) > 0 {
 			headers["request"] = map[string]interface{}{
 				"set": config.Headers,
 			}
 		}
-		
+
 		// 设置响应头部
 		if len(config.ResponseHeaders) > 0 {
 			headers["response"] = map[string]interface{}{
 				"set": config.ResponseHeaders,
 			}
 		}
-		
+
 		route["headers"] = headers
 	}
 
@@ -302,22 +302,6 @@ func (v *virtualServiceController) buildMatch(config *VirtualServiceConfig) map[
 		"uri": map[string]interface{}{
 			"prefix": "/",
 		},
-	}
-
-	// 根据协议添加特定匹配规则
-	switch config.Protocol {
-	case ProtocolWebSocket:
-		match["headers"] = map[string]interface{}{
-			"upgrade": map[string]interface{}{
-				"exact": "websocket",
-			},
-		}
-	case ProtocolGRPC:
-		match["headers"] = map[string]interface{}{
-			"content-type": map[string]interface{}{
-				"prefix": "application/grpc",
-			},
-		}
 	}
 
 	return match
