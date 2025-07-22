@@ -553,8 +553,8 @@ func (r *AdminerReconciler) syncOptimizedIstioNetworking(ctx context.Context, ad
 			AllowCredentials: true,
 		},
 
-		// 安全头部配置
-		Headers: r.buildSecurityHeaders(),
+		// 安全头部配置（设置为响应头部）
+		ResponseHeaders: r.buildSecurityHeaders(),
 
 		// TLS 配置
 		TLSEnabled: r.tlsEnabled,
@@ -653,14 +653,14 @@ func (r *AdminerReconciler) buildCorsOrigins() []string {
 	return uniqueOrigins
 }
 
-// buildSecurityHeaders 构建安全头部
+// buildSecurityHeaders 构建安全响应头部
 func (r *AdminerReconciler) buildSecurityHeaders() map[string]string {
 	headers := make(map[string]string)
 
-	// 设置 X-Frame-Options，允许 iframe 嵌入
+	// 设置 X-Frame-Options，允许 iframe 嵌入（响应头部）
 	headers["X-Frame-Options"] = "SAMEORIGIN"
 
-	// 设置 Content Security Policy
+	// 设置 Content Security Policy（响应头部）
 	cspValue := fmt.Sprintf("default-src * blob: data: *.%s %s; img-src * data: blob: resource: *.%s %s; connect-src * wss: blob: resource:; style-src 'self' 'unsafe-inline' blob: *.%s %s resource:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: *.%s %s resource: *.baidu.com *.bdstatic.com; frame-src 'self' %s *.%s mailto: tel: weixin: mtt: *.baidu.com; frame-ancestors 'self' https://%s https://*.%s",
 		r.adminerDomain, r.adminerDomain,
 		r.adminerDomain, r.adminerDomain,
@@ -671,7 +671,7 @@ func (r *AdminerReconciler) buildSecurityHeaders() map[string]string {
 
 	headers["Content-Security-Policy"] = cspValue
 
-	// 设置 XSS 保护
+	// 设置 XSS 保护（响应头部）
 	headers["X-Xss-Protection"] = "1; mode=block"
 
 	return headers

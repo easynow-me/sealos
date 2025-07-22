@@ -80,7 +80,8 @@ type AppNetworkingParams struct {
 	Timeout            *time.Duration
 	SecretHeader       string            // Terminal专用
 	CorsPolicy         *CorsPolicy
-	Headers            map[string]string
+	Headers            map[string]string // 请求头部
+	ResponseHeaders    map[string]string // 响应头部
 	
 	// 证书配置
 	TLSEnabled         bool
@@ -208,10 +209,11 @@ func (h *UniversalIstioNetworkingHelper) buildNetworkingSpec(params *AppNetworki
 		ServicePort: params.ServicePort,
 		
 		// 高级配置
-		Timeout:      params.Timeout,
-		CorsPolicy:   params.CorsPolicy,
-		Headers:      params.Headers,
-		SecretHeader: params.SecretHeader,
+		Timeout:         params.Timeout,
+		CorsPolicy:      params.CorsPolicy,
+		Headers:         params.Headers,
+		ResponseHeaders: params.ResponseHeaders,
+		SecretHeader:    params.SecretHeader,
 		
 		// 标签和注解
 		Labels:      h.buildLabels(params, classification),

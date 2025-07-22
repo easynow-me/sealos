@@ -271,13 +271,24 @@ func (v *virtualServiceController) buildHTTPRoutes(config *VirtualServiceConfig)
 		route["corsPolicy"] = v.buildCorsPolicy(config.CorsPolicy)
 	}
 
-	// 添加请求头配置
-	if len(config.Headers) > 0 {
-		headers := map[string]interface{}{
-			"request": map[string]interface{}{
+	// 添加头部配置（请求和响应）
+	if len(config.Headers) > 0 || len(config.ResponseHeaders) > 0 {
+		headers := map[string]interface{}{}
+		
+		// 设置请求头部
+		if len(config.Headers) > 0 {
+			headers["request"] = map[string]interface{}{
 				"set": config.Headers,
-			},
+			}
 		}
+		
+		// 设置响应头部
+		if len(config.ResponseHeaders) > 0 {
+			headers["response"] = map[string]interface{}{
+				"set": config.ResponseHeaders,
+			}
+		}
+		
 		route["headers"] = headers
 	}
 

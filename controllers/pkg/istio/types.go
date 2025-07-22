@@ -76,10 +76,11 @@ type AppNetworkingSpec struct {
 	TLSConfig *TLSConfig
 
 	// 高级配置
-	Timeout    *time.Duration
-	Retries    *RetryPolicy
-	CorsPolicy *CorsPolicy
-	Headers    map[string]string
+	Timeout         *time.Duration
+	Retries         *RetryPolicy
+	CorsPolicy      *CorsPolicy
+	Headers         map[string]string // 请求头部
+	ResponseHeaders map[string]string // 响应头部
 
 	// 安全配置
 	SecretHeader string // Terminal 专用
@@ -149,11 +150,12 @@ type VirtualServiceConfig struct {
 	Protocol    Protocol
 	ServiceName string
 	ServicePort int32
-	Timeout     *time.Duration
-	Retries     *RetryPolicy
-	CorsPolicy  *CorsPolicy
-	Headers     map[string]string
-	Labels      map[string]string
+	Timeout         *time.Duration
+	Retries         *RetryPolicy
+	CorsPolicy      *CorsPolicy
+	Headers         map[string]string // 请求头部
+	ResponseHeaders map[string]string // 响应头部
+	Labels          map[string]string
 }
 
 // GatewayController Gateway 控制器接口
