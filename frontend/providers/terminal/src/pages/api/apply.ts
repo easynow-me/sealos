@@ -13,17 +13,53 @@ export const terminal_meta: CRDMeta = {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
+    console.log('Headers authorization present:', !!req.headers?.authorization);
     const kubeconfig = await authSession(req.headers);
+    console.log('Kubeconfig length:', kubeconfig?.length || 0);
+    
     const kc = K8sApi(kubeconfig);
+    console.log('KubeConfig loaded successfully');
+    
+    // Check current context
+    const currentContext = kc.getCurrentContext();
+    console.log('Current context:', currentContext);
+    
+    // Check current cluster
+    const currentCluster = kc.getCurrentCluster();
+    console.log('Current cluster name:', currentCluster?.name);
 
     const kube_user = kc.getCurrentUser();
 
-    if (!kube_user || !kube_user.token || !kube_user.name) {
-      throw new Error('kube_user get failed');
+    if (!kube_user) {
+      console.log('getCurrentUser() returned null');
+      throw new Error('kube_user get failed: getCurrentUser() returned null');
     }
 
-    const terminal_name = 'terminal-' + kube_user.name;
-    const namespace = GetUserDefaultNameSpace(kube_user.name);
+    // Log available properties for debugging
+    console.log('kube_user properties:', Object.keys(kube_user));
+    console.log('kube_user:', {
+      name: kube_user.name,
+      username: kube_user.username,
+      token: kube_user.token ? '[REDACTED]' : undefined,
+      hasToken: !!kube_user.token
+    });
+
+    // Try to get user name from different properties
+    const userName = kube_user.name || kube_user.username;
+    const userToken = kube_user.token;
+
+    if (!userName) {
+      console.log('No user name found in kube_user');
+      throw new Error('kube_user get failed: no user name found');
+    }
+
+    if (!userToken) {
+      console.log('No token found in kube_user');
+      throw new Error('kube_user get failed: no token found');
+    }
+
+    const terminal_name = 'terminal-' + userName;
+    const namespace = GetUserDefaultNameSpace(userName);
 
     // first get user namespace crd
     let terminal_meta_user = { ...terminal_meta };
@@ -45,9 +81,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const terminal_yaml = generateTerminalTemplate({
       namespace: namespace,
-      user_name: kube_user.name,
+      user_name: userName,
       terminal_name: terminal_name,
-      token: kube_user.token,
+      token: userToken,
       currentTime: new Date().toISOString()
     });
     const result = await ApplyYaml(kc, terminal_yaml);
