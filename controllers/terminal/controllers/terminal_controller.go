@@ -28,8 +28,8 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -121,13 +121,13 @@ func retryStatusUpdateOnConflict(ctx context.Context, c client.Client, obj clien
 // TerminalReconciler reconciles a Terminal object
 type TerminalReconciler struct {
 	client.Client
-	Scheme           *runtime.Scheme
-	recorder         record.EventRecorder
-	Config           *rest.Config
-	CtrConfig        *Config
-	istioReconciler  *IstioNetworkingReconciler // 保留向后兼容
-	istioHelper      *istio.UniversalIstioNetworkingHelper // 🎯 新增通用助手
-	useIstio         bool
+	Scheme          *runtime.Scheme
+	recorder        record.EventRecorder
+	Config          *rest.Config
+	CtrConfig       *Config
+	istioReconciler *IstioNetworkingReconciler            // 保留向后兼容
+	istioHelper     *istio.UniversalIstioNetworkingHelper // 🎯 新增通用助手
+	useIstio        bool
 }
 
 //+kubebuilder:rbac:groups=terminal.sealos.io,resources=terminals,verbs=get;list;watch;create;update;patch;delete
@@ -236,7 +236,7 @@ func (r *TerminalReconciler) syncNetworking(ctx context.Context, terminal *termi
 	if r.useIstio && r.istioReconciler != nil {
 		return r.syncIstioNetworking(ctx, terminal, hostname, recLabels)
 	}
-	
+
 	// 回退到原有的 Ingress 模式
 	return r.syncIngress(ctx, terminal, hostname, recLabels)
 }
@@ -261,7 +261,7 @@ func (r *TerminalReconciler) syncIstioNetworking(ctx context.Context, terminal *
 	if err := r.istioReconciler.SyncIstioNetworking(ctx, terminal, hostname); err != nil {
 		return err
 	}
-	
+
 	// 更新 Terminal 状态中的域名
 	host := hostname + "." + r.CtrConfig.Global.CloudDomain
 	domain := Protocol + host + r.getPort()
@@ -270,7 +270,7 @@ func (r *TerminalReconciler) syncIstioNetworking(ctx context.Context, terminal *
 			terminal.Status.Domain = domain
 		})
 	}
-	
+
 	return nil
 }
 
@@ -278,7 +278,7 @@ func (r *TerminalReconciler) syncIstioNetworking(ctx context.Context, terminal *
 func (r *TerminalReconciler) syncOptimizedIstioNetworking(ctx context.Context, terminal *terminalv1.Terminal, hostname string, recLabels map[string]string) error {
 	// 构建域名
 	host := hostname + "." + r.CtrConfig.Global.CloudDomain
-	
+
 	// 🎯 使用通用助手的智能网络配置
 	params := &istio.AppNetworkingParams{
 		Name:        terminal.Name,
@@ -288,11 +288,11 @@ func (r *TerminalReconciler) syncOptimizedIstioNetworking(ctx context.Context, t
 		ServiceName: terminal.Status.ServiceName,
 		ServicePort: 8080,
 		Protocol:    istio.ProtocolWebSocket, // Terminal使用WebSocket协议
-		
+
 		// Terminal专用配置
 		Timeout:      &[]time.Duration{86400 * time.Second}[0], // 24小时超时，支持长时间SSH会话
-		SecretHeader: terminal.Status.SecretHeader, // Terminal安全头
-		
+		SecretHeader: terminal.Status.SecretHeader,             // Terminal安全头
+
 		// CORS 配置
 		CorsPolicy: &istio.CorsPolicy{
 			AllowOrigins:     r.buildTerminalCorsOrigins(),
@@ -300,39 +300,39 @@ func (r *TerminalReconciler) syncOptimizedIstioNetworking(ctx context.Context, t
 			AllowHeaders:     []string{"content-type", "authorization"},
 			AllowCredentials: false,
 		},
-		
+
 		// 响应头部配置（安全头部）
 		ResponseHeaders: r.buildSecurityResponseHeaders(),
-		
+
 		// TLS 配置
 		TLSEnabled: r.CtrConfig.Global.CloudPort == "" || r.CtrConfig.Global.CloudPort == "443",
-		
+
 		// 标签和注解
-		Labels:      recLabels,
+		Labels: recLabels,
 		Annotations: map[string]string{
 			"sealos.io/converted-from": "terminal-controller",
 			"sealos.io/gateway-type":   "optimized", // 标记使用优化Gateway
 			"sealos.io/protocol":       "websocket", // 标记协议类型
 		},
-		
+
 		// 设置 Owner Reference
 		OwnerObject: terminal,
 	}
-	
+
 	// 🎯 关键：使用通用助手创建优化的网络配置（自动选择Gateway）
 	if err := r.istioHelper.CreateOrUpdateNetworking(ctx, params); err != nil {
 		return fmt.Errorf("failed to sync optimized istio networking: %w", err)
 	}
-	
+
 	// 🎯 分析域名需求（展示智能Gateway选择过程）
 	analysis := r.istioHelper.AnalyzeDomainRequirements(params)
-	
+
 	// 更新 Terminal 状态中的域名和Gateway信息
 	domain := Protocol + host + r.getPort()
-	
+
 	return retryStatusUpdateOnConflict(ctx, r.Client, terminal, func() {
 		terminal.Status.Domain = domain
-		
+
 		// 🎯 添加Gateway优化状态信息
 		if terminal.Annotations == nil {
 			terminal.Annotations = make(map[string]string)
@@ -351,14 +351,14 @@ func (r *TerminalReconciler) syncOptimizedIstioNetworking(ctx context.Context, t
 // buildTerminalCorsOrigins 构建Terminal的CORS源 - 使用精确匹配的terminal子域名
 func (r *TerminalReconciler) buildTerminalCorsOrigins() []string {
 	corsOrigins := []string{}
-	
+
 	// 检查是否启用了 TLS
 	tlsEnabled := r.CtrConfig.Global.CloudPort == "" || r.CtrConfig.Global.CloudPort == "443"
-	
+
 	if tlsEnabled {
 		// 添加精确的 terminal 子域名
 		corsOrigins = append(corsOrigins, fmt.Sprintf("https://terminal.%s", r.CtrConfig.Global.CloudDomain))
-		
+
 		// 如果使用了 istioReconciler，获取公共域名配置
 		if r.istioReconciler != nil && r.istioReconciler.config != nil {
 			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
@@ -375,7 +375,7 @@ func (r *TerminalReconciler) buildTerminalCorsOrigins() []string {
 	} else {
 		// HTTP 模式
 		corsOrigins = append(corsOrigins, fmt.Sprintf("http://terminal.%s", r.CtrConfig.Global.CloudDomain))
-		
+
 		if r.istioReconciler != nil && r.istioReconciler.config != nil {
 			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
 				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
@@ -387,7 +387,7 @@ func (r *TerminalReconciler) buildTerminalCorsOrigins() []string {
 			}
 		}
 	}
-	
+
 	// 去重
 	uniqueOrigins := make([]string, 0, len(corsOrigins))
 	seen := make(map[string]bool)
@@ -397,30 +397,30 @@ func (r *TerminalReconciler) buildTerminalCorsOrigins() []string {
 			seen[origin] = true
 		}
 	}
-	
+
 	return uniqueOrigins
 }
 
 // buildSecurityResponseHeaders 构建安全响应头部
 func (r *TerminalReconciler) buildSecurityResponseHeaders() map[string]string {
 	headers := make(map[string]string)
-	
+
 	// 设置 X-Frame-Options，防止点击劫持
-	headers["X-Frame-Options"] = "SAMEORIGIN"
-	
+	headers["X-Frame-Options"] = ""
+
 	// 设置 X-Content-Type-Options，防止 MIME 类型嗅探
 	headers["X-Content-Type-Options"] = "nosniff"
-	
+
 	// 设置 X-XSS-Protection，虽然现代浏览器已经内置了 XSS 保护
 	headers["X-XSS-Protection"] = "1; mode=block"
-	
+
 	// 设置 Referrer-Policy
 	headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-	
+
 	// 对于 WebSocket 应用，通常不需要设置 CSP，因为它主要处理二进制流
 	// 但我们可以设置一个基本的 CSP 来增强安全性
 	headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' wss:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
-	
+
 	return headers
 }
 
@@ -652,20 +652,20 @@ func (r *TerminalReconciler) generateSecretHeader() string {
 func (r *TerminalReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor("sealos-terminal-controller")
 	r.Config = mgr.GetConfig()
-	
+
 	// 初始化 Istio 支持
 	ctx := context.Background()
 	if err := r.SetupIstioSupport(ctx); err != nil {
 		r.recorder.Eventf(&terminalv1.Terminal{}, corev1.EventTypeWarning, "IstioSetupFailed", "Failed to setup Istio support: %v", err)
 		// 不返回错误，继续使用 Ingress 模式
 	}
-	
+
 	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&terminalv1.Terminal{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.Deployment{}, builder.WithPredicates(predicate.ResourceVersionChangedPredicate{})).
 		Owns(&corev1.Service{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{}))
-	
+
 	// 如果启用了 Istio，添加对 Istio 资源的监听
 	if r.useIstio {
 		// 使用 unstructured 类型来监听 Istio CRDs
@@ -675,18 +675,18 @@ func (r *TerminalReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			Version: "v1beta1",
 			Kind:    "VirtualService",
 		})
-		
+
 		gatewayType := &unstructured.Unstructured{}
 		gatewayType.SetGroupVersionKind(schema.GroupVersionKind{
 			Group:   "networking.istio.io",
 			Version: "v1beta1",
 			Kind:    "Gateway",
 		})
-		
+
 		controllerBuilder = controllerBuilder.
 			Owns(virtualServiceType).
 			Owns(gatewayType)
 	}
-	
+
 	return controllerBuilder.Complete(r)
 }

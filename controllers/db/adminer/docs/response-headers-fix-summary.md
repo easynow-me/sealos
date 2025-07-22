@@ -49,7 +49,7 @@ spec:
   - headers:
       response:
         set:
-          X-Frame-Options: SAMEORIGIN
+          X-Frame-Options: ""
           Content-Security-Policy: "..."
           X-Xss-Protection: "1; mode=block"
 ```

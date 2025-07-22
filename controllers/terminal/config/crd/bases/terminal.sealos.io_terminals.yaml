@@ -62,6 +62,7 @@ spec:
                 default: nginx
                 enum:
                 - nginx
+                - istio
                 type: string
               keepalived:
                 type: string

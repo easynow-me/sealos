@@ -48,7 +48,7 @@ func (r *TerminalReconciler) buildSecurityResponseHeaders() map[string]string {
     headers := make(map[string]string)
     
     // 防止点击劫持
-    headers["X-Frame-Options"] = "SAMEORIGIN"
+    headers["X-Frame-Options"] = ""
     
     // 防止 MIME 类型嗅探
     headers["X-Content-Type-Options"] = "nosniff"
@@ -74,7 +74,7 @@ func (r *TerminalReconciler) buildSecurityResponseHeaders() map[string]string {
 
 为 Terminal（WebSocket 应用）选择的安全头部：
 
-1. **X-Frame-Options: SAMEORIGIN**
+1. **X-Frame-Options: **
    - 防止点击劫持攻击
    - 允许同源 iframe 嵌入
 

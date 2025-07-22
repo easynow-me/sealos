@@ -49,7 +49,7 @@ func TestTerminalSecurityResponseHeaders(t *testing.T) {
 
 		// Check for security headers
 		expectedHeaders := map[string]string{
-			"X-Frame-Options":         "SAMEORIGIN",
+			"X-Frame-Options":         "",
 			"X-Content-Type-Options":  "nosniff",
 			"X-XSS-Protection":        "1; mode=block",
 			"Referrer-Policy":         "strict-origin-when-cross-origin",
@@ -75,8 +75,8 @@ func TestTerminalSecurityResponseHeaders(t *testing.T) {
 				Namespace: "test-namespace",
 			},
 			Status: terminalv1.TerminalStatus{
-				ServiceName:   "test-terminal-svc",
-				SecretHeader:  "X-SEALOS-TEST",
+				ServiceName:  "test-terminal-svc",
+				SecretHeader: "X-SEALOS-TEST",
 			},
 		}
 

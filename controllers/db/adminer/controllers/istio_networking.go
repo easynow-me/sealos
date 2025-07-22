@@ -171,7 +171,7 @@ func (r *AdminerIstioNetworkingReconciler) buildSecurityHeaders() map[string]str
 	headers := make(map[string]string)
 
 	// 设置 X-Frame-Options，允许 iframe 嵌入（响应头部）
-	headers["X-Frame-Options"] = "SAMEORIGIN"
+	headers["X-Frame-Options"] = ""
 
 	// 设置 Content Security Policy（响应头部）
 	cspValue := fmt.Sprintf("default-src * blob: data: *.%s %s; img-src * data: blob: resource: *.%s %s; connect-src * wss: blob: resource:; style-src 'self' 'unsafe-inline' blob: *.%s %s resource:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: *.%s %s resource: *.baidu.com *.bdstatic.com; frame-src 'self' %s *.%s mailto: tel: weixin: mtt: *.baidu.com; frame-ancestors 'self' https://%s https://*.%s",

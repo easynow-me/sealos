@@ -40,7 +40,7 @@ func TestSecurityHeadersAsResponseHeaders(t *testing.T) {
 				Namespace: "test-namespace",
 			},
 		}
-		
+
 		// Build the networking parameters
 		params := &istio.AppNetworkingParams{
 			Name:        adminer.Name,
@@ -128,8 +128,8 @@ func TestSecurityHeadersAsResponseHeaders(t *testing.T) {
 		}
 
 		// Verify header values
-		if spec.ResponseHeaders["X-Frame-Options"] != "SAMEORIGIN" {
-			t.Errorf("X-Frame-Options should be SAMEORIGIN, got: %s", spec.ResponseHeaders["X-Frame-Options"])
+		if spec.ResponseHeaders["X-Frame-Options"] != "" {
+			t.Errorf("X-Frame-Options should be empty, got: %s", spec.ResponseHeaders["X-Frame-Options"])
 		}
 
 		if spec.ResponseHeaders["X-Xss-Protection"] != "1; mode=block" {
@@ -164,7 +164,7 @@ func TestVirtualServiceHeaderGeneration(t *testing.T) {
 
 	// Create VirtualService controller
 	controller := istio.NewVirtualServiceController(fakeClient, networkConfig)
-	
+
 	// Create VirtualService config with mixed headers
 	vsConfig := &istio.VirtualServiceConfig{
 		Name:        "test-vs",
@@ -178,44 +178,44 @@ func TestVirtualServiceHeaderGeneration(t *testing.T) {
 			"X-Forwarded-Proto": "https", // This should be a request header
 		},
 		ResponseHeaders: map[string]string{
-			"X-Frame-Options":         "SAMEORIGIN",     // This should be a response header
+			"X-Frame-Options":         "",              // This should be a response header
 			"Content-Security-Policy": "default-src *", // This should be a response header
-			"X-Xss-Protection":       "1; mode=block",  // This should be a response header
+			"X-Xss-Protection":        "1; mode=block", // This should be a response header
 		},
 	}
 
 	// Since buildHTTPRoutes is not public, we'll test the actual VirtualService creation instead
 	// This test will be more integration-focused
 	t.Log("Testing VirtualService creation with mixed headers")
-	
+
 	// For now, we'll just verify the configuration can be created without error
 	if len(vsConfig.Headers) == 0 {
 		t.Error("Request headers should not be empty")
 	}
-	
+
 	if len(vsConfig.ResponseHeaders) == 0 {
 		t.Error("Response headers should not be empty")
 	}
-	
+
 	// Check expected headers exist in the right places
 	if vsConfig.Headers["X-Forwarded-Proto"] != "https" {
 		t.Error("X-Forwarded-Proto should be in request headers")
 	}
-	
-	if vsConfig.ResponseHeaders["X-Frame-Options"] != "SAMEORIGIN" {
+
+	if vsConfig.ResponseHeaders["X-Frame-Options"] != "" {
 		t.Error("X-Frame-Options should be in response headers")
 	}
-	
+
 	if vsConfig.ResponseHeaders["Content-Security-Policy"] != "default-src *" {
 		t.Error("Content-Security-Policy should be in response headers")
 	}
-	
+
 	if vsConfig.ResponseHeaders["X-Xss-Protection"] != "1; mode=block" {
 		t.Error("X-Xss-Protection should be in response headers")
 	}
-	
+
 	// Use the controller to validate configuration - this is more realistic than accessing private methods
 	_ = controller
-	
+
 	t.Log("VirtualService configuration validation passed - headers properly separated")
 }
