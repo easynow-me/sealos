@@ -301,6 +301,9 @@ func (r *TerminalReconciler) syncOptimizedIstioNetworking(ctx context.Context, t
 			AllowCredentials: false,
 		},
 		
+		// 响应头部配置（安全头部）
+		ResponseHeaders: r.buildSecurityResponseHeaders(),
+		
 		// TLS 配置
 		TLSEnabled: r.CtrConfig.Global.CloudPort == "" || r.CtrConfig.Global.CloudPort == "443",
 		
@@ -345,23 +348,80 @@ func (r *TerminalReconciler) syncOptimizedIstioNetworking(ctx context.Context, t
 	})
 }
 
-// buildTerminalCorsOrigins 构建Terminal的CORS源
+// buildTerminalCorsOrigins 构建Terminal的CORS源 - 使用精确匹配的terminal子域名
 func (r *TerminalReconciler) buildTerminalCorsOrigins() []string {
-	corsOrigins := []string{
-		fmt.Sprintf("https://%s", r.CtrConfig.Global.CloudDomain),
-		fmt.Sprintf("https://*.%s", r.CtrConfig.Global.CloudDomain),
+	corsOrigins := []string{}
+	
+	// 检查是否启用了 TLS
+	tlsEnabled := r.CtrConfig.Global.CloudPort == "" || r.CtrConfig.Global.CloudPort == "443"
+	
+	if tlsEnabled {
+		// 添加精确的 terminal 子域名
+		corsOrigins = append(corsOrigins, fmt.Sprintf("https://terminal.%s", r.CtrConfig.Global.CloudDomain))
+		
+		// 如果使用了 istioReconciler，获取公共域名配置
+		if r.istioReconciler != nil && r.istioReconciler.config != nil {
+			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
+				// 处理通配符域名 (如 *.cloud.sealos.io)
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://terminal.%s", baseDomain))
+				} else {
+					// 精确域名
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://terminal.%s", publicDomain))
+				}
+			}
+		}
+	} else {
+		// HTTP 模式
+		corsOrigins = append(corsOrigins, fmt.Sprintf("http://terminal.%s", r.CtrConfig.Global.CloudDomain))
+		
+		if r.istioReconciler != nil && r.istioReconciler.config != nil {
+			for _, publicDomain := range r.istioReconciler.config.PublicDomains {
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://terminal.%s", baseDomain))
+				} else {
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://terminal.%s", publicDomain))
+				}
+			}
+		}
 	}
 	
-	// 添加端口支持（如果配置了自定义端口）
-	if r.CtrConfig.Global.CloudDomain == "cloud.sealos.io" {
-		// 为了兼容性，添加带端口的域名
-		corsOrigins = append(corsOrigins,
-			"https://cloud.sealos.io:443",
-			"https://*.cloud.sealos.io:443",
-		)
+	// 去重
+	uniqueOrigins := make([]string, 0, len(corsOrigins))
+	seen := make(map[string]bool)
+	for _, origin := range corsOrigins {
+		if !seen[origin] {
+			uniqueOrigins = append(uniqueOrigins, origin)
+			seen[origin] = true
+		}
 	}
 	
-	return corsOrigins
+	return uniqueOrigins
+}
+
+// buildSecurityResponseHeaders 构建安全响应头部
+func (r *TerminalReconciler) buildSecurityResponseHeaders() map[string]string {
+	headers := make(map[string]string)
+	
+	// 设置 X-Frame-Options，防止点击劫持
+	headers["X-Frame-Options"] = "SAMEORIGIN"
+	
+	// 设置 X-Content-Type-Options，防止 MIME 类型嗅探
+	headers["X-Content-Type-Options"] = "nosniff"
+	
+	// 设置 X-XSS-Protection，虽然现代浏览器已经内置了 XSS 保护
+	headers["X-XSS-Protection"] = "1; mode=block"
+	
+	// 设置 Referrer-Policy
+	headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+	
+	// 对于 WebSocket 应用，通常不需要设置 CSP，因为它主要处理二进制流
+	// 但我们可以设置一个基本的 CSP 来增强安全性
+	headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' wss:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
+	
+	return headers
 }
 
 func (r *TerminalReconciler) syncNginxIngress(ctx context.Context, terminal *terminalv1.Terminal, host string, recLabels map[string]string) error {

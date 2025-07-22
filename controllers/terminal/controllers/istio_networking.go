@@ -78,20 +78,8 @@ func (r *IstioNetworkingReconciler) buildNetworkingSpec(terminal *terminalv1.Ter
 	// 构建域名
 	domain := hostname + "." + r.config.BaseDomain
 	
-	// 构建 CORS 源
-	corsOrigins := []string{
-		fmt.Sprintf("https://%s", r.config.BaseDomain),
-		fmt.Sprintf("https://*.%s", r.config.BaseDomain),
-	}
-	
-	// 添加端口支持（如果配置了自定义端口）
-	if r.config.BaseDomain == "cloud.sealos.io" {
-		// 为了兼容性，添加带端口的域名
-		corsOrigins = append(corsOrigins,
-			"https://cloud.sealos.io:443",
-			"https://*.cloud.sealos.io:443",
-		)
-	}
+	// 构建 CORS 源 - 使用精确匹配的 terminal 子域名
+	corsOrigins := r.buildCorsOrigins()
 	
 	spec := &istio.AppNetworkingSpec{
 		Name:         terminal.Name,
@@ -114,6 +102,9 @@ func (r *IstioNetworkingReconciler) buildNetworkingSpec(terminal *terminalv1.Ter
 			AllowHeaders:     []string{"content-type", "authorization"},
 			AllowCredentials: false,
 		},
+		
+		// 响应头部配置（安全头部）
+		ResponseHeaders: r.buildSecurityResponseHeaders(),
 		
 		// 标签
 		Labels: map[string]string{
@@ -182,4 +173,76 @@ func (r *IstioNetworkingReconciler) ValidateIstioInstallation(ctx context.Contex
 	}
 	
 	return nil
+}
+
+// buildCorsOrigins 构建CORS源 - 使用精确匹配的terminal子域名
+func (r *IstioNetworkingReconciler) buildCorsOrigins() []string {
+	corsOrigins := []string{}
+	
+	if r.config.TLSEnabled {
+		// 添加精确的 terminal 子域名
+		corsOrigins = append(corsOrigins, fmt.Sprintf("https://terminal.%s", r.config.BaseDomain))
+		
+		// 如果有配置的公共域名，也添加它们的 terminal 子域名
+		if len(r.config.PublicDomains) > 0 {
+			for _, publicDomain := range r.config.PublicDomains {
+				// 处理通配符域名 (如 *.cloud.sealos.io)
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://terminal.%s", baseDomain))
+				} else {
+					// 精确域名
+					corsOrigins = append(corsOrigins, fmt.Sprintf("https://terminal.%s", publicDomain))
+				}
+			}
+		}
+	} else {
+		// HTTP 模式
+		corsOrigins = append(corsOrigins, fmt.Sprintf("http://terminal.%s", r.config.BaseDomain))
+		
+		if len(r.config.PublicDomains) > 0 {
+			for _, publicDomain := range r.config.PublicDomains {
+				if len(publicDomain) > 2 && publicDomain[0:2] == "*." {
+					baseDomain := publicDomain[2:]
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://terminal.%s", baseDomain))
+				} else {
+					corsOrigins = append(corsOrigins, fmt.Sprintf("http://terminal.%s", publicDomain))
+				}
+			}
+		}
+	}
+	
+	// 去重
+	uniqueOrigins := make([]string, 0, len(corsOrigins))
+	seen := make(map[string]bool)
+	for _, origin := range corsOrigins {
+		if !seen[origin] {
+			uniqueOrigins = append(uniqueOrigins, origin)
+			seen[origin] = true
+		}
+	}
+	
+	return uniqueOrigins
+}
+
+// buildSecurityResponseHeaders 构建安全响应头部
+func (r *IstioNetworkingReconciler) buildSecurityResponseHeaders() map[string]string {
+	headers := make(map[string]string)
+	
+	// 设置 X-Frame-Options，防止点击劫持
+	headers["X-Frame-Options"] = "SAMEORIGIN"
+	
+	// 设置 X-Content-Type-Options，防止 MIME 类型嗅探
+	headers["X-Content-Type-Options"] = "nosniff"
+	
+	// 设置 X-XSS-Protection
+	headers["X-XSS-Protection"] = "1; mode=block"
+	
+	// 设置 Referrer-Policy
+	headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+	
+	// 对于 WebSocket 应用的基本 CSP
+	headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' wss:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval';"
+	
+	return headers
 }
