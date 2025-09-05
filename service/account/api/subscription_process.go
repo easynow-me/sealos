@@ -25,7 +25,7 @@ const (
 	// LockTimeout 分布式锁超时时间
 	LockTimeout = 10 * time.Minute
 	// BatchSize 处理批次大小
-	BatchSize = 100
+	BatchSize = 1000
 )
 
 // SubscriptionProcessor 处理订阅到期和自动续费
