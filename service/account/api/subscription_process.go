@@ -146,12 +146,12 @@ func (p *SubscriptionProcessor) processExpiredSubscriptions() error {
 	var expiredSubscriptions []types.Subscription
 
 	err := p.db.Transaction(func(tx *gorm.DB) error {
-		// 查找已过期但状态仍为正常的订阅
+		// 查找已过期的订阅，包括正常状态和欠费状态的Free plan
 		return tx.Raw(`
 			SELECT s.* FROM "Subscription" s
-			WHERE s.expire_at < ?AND s.status = ?
+			WHERE s.expire_at < ? AND (s.status = ? OR (s.status = ? AND s.plan_name = ?))
 			LIMIT ?
-		`, time.Now().UTC().Add(10*time.Minute), types.SubscriptionStatusNormal, BatchSize).Scan(&expiredSubscriptions).Error
+		`, time.Now().UTC().Add(10*time.Minute), types.SubscriptionStatusNormal, types.SubscriptionStatusDebt, types.FreeSubscriptionPlanName, BatchSize).Scan(&expiredSubscriptions).Error
 	})
 
 	if err != nil {
@@ -213,7 +213,7 @@ func (p *SubscriptionProcessor) HandlerSubscriptionTransaction(subscription *typ
 	}
 
 	//TODO if free subscription, determine whether to bind github account. If bound, renewal subscription; otherwise, the status changes to Debt
-	if subscription.PlanName == types.FreeSubscriptionPlanName && subscription.Status == types.SubscriptionStatusNormal {
+	if subscription.PlanName == types.FreeSubscriptionPlanName {
 		// TODO 待删除逻辑
 		//ok, err := HasGithubOauthProvider(p.db, subscription.UserUID)
 		//if err != nil {
@@ -245,23 +245,34 @@ func (p *SubscriptionProcessor) HandlerSubscriptionTransaction(subscription *typ
 			return fmt.Errorf("failed to get tgId for user %s: %w", subscription.UserUID, err)
 		}
 		if tgId != nil && *tgId != 0 {
-			// 直接创建一个订阅交易记录，状态为 NoNeed
+			// 满足续费条件，创建订阅交易记录
 			subTransaction.PayStatus = types.SubscriptionPayStatusNoNeed
 			err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
-				return tx.Create(&subTransaction).Error
+				// 创建交易记录
+				if err := tx.Create(&subTransaction).Error; err != nil {
+					return err
+				}
+				// 如果当前状态是欠费，恢复为正常状态
+				if subscription.Status == types.SubscriptionStatusDebt {
+					return tx.Model(&types.Subscription{}).Where(&types.Subscription{ID: subscription.ID}).Update("status", types.SubscriptionStatusNormal).Error
+				}
+				return nil
 			})
 			if err != nil {
 				return fmt.Errorf("failed to create subscription transaction: %w", err)
 			}
 			return nil
 		} else {
-			// tgId 为 0，不满足免费订阅续费条件，设置为欠费
-			subscription.Status = types.SubscriptionStatusDebt
-			err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
-				return tx.Model(&types.Subscription{}).Where(&types.Subscription{ID: subscription.ID}).Update("status", types.SubscriptionStatusDebt).Error
-			})
-			if err != nil {
-				return fmt.Errorf("failed to update subscription status: %w", err)
+			// tgId 为 0，不满足免费订阅续费条件
+			// 只有当前状态不是欠费时才更新为欠费
+			if subscription.Status != types.SubscriptionStatusDebt {
+				subscription.Status = types.SubscriptionStatusDebt
+				err = dao.DBClient.GlobalTransactionHandler(func(tx *gorm.DB) error {
+					return tx.Model(&types.Subscription{}).Where(&types.Subscription{ID: subscription.ID}).Update("status", types.SubscriptionStatusDebt).Error
+				})
+				if err != nil {
+					return fmt.Errorf("failed to update subscription status: %w", err)
+				}
 			}
 			return nil
 		}

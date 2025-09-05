@@ -40,7 +40,7 @@ func TestVirtualServiceResponseHeadersIntegration(t *testing.T) {
 		
 		// Response headers (security headers)
 		ResponseHeaders: map[string]string{
-			"X-Frame-Options":         "SAMEORIGIN",
+			"X-Frame-Options":         "",
 			"Content-Security-Policy": "default-src 'self'",
 			"X-Xss-Protection":       "1; mode=block",
 		},
@@ -69,7 +69,7 @@ func TestVirtualServiceResponseHeadersIntegration(t *testing.T) {
 
 	// Check response headers
 	expectedResponseHeaders := map[string]string{
-		"X-Frame-Options":         "SAMEORIGIN",
+		"X-Frame-Options":         "",
 		"Content-Security-Policy": "default-src 'self'",
 		"X-Xss-Protection":       "1; mode=block",
 	}
@@ -122,7 +122,7 @@ func TestOptimizedManagerPreservesResponseHeaders(t *testing.T) {
 		
 		// Response headers (security headers)
 		ResponseHeaders: map[string]string{
-			"X-Frame-Options":         "SAMEORIGIN",
+			"X-Frame-Options":         "",
 			"Content-Security-Policy": "default-src 'self'",
 			"X-Xss-Protection":       "1; mode=block",
 		},

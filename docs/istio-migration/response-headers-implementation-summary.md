@@ -24,7 +24,7 @@ During runtime, VirtualServices were missing proper header configurations. Inves
 
 **Headers Added:**
 ```go
-- X-Frame-Options: SAMEORIGIN
+- X-Frame-Options: 
 - Content-Security-Policy: (comprehensive CSP for database management UI)
 - X-Xss-Protection: 1; mode=block
 ```
@@ -36,7 +36,7 @@ During runtime, VirtualServices were missing proper header configurations. Inves
 
 **Headers Added:**
 ```go
-- X-Frame-Options: SAMEORIGIN
+- X-Frame-Options: 
 - X-Content-Type-Options: nosniff
 - X-XSS-Protection: 1; mode=block
 - Referrer-Policy: strict-origin-when-cross-origin
@@ -57,7 +57,7 @@ spec:
           X-Forwarded-Proto: https
       response:  # For response headers
         set:
-          X-Frame-Options: SAMEORIGIN
+          X-Frame-Options: 
           Content-Security-Policy: "..."
 ```
 
