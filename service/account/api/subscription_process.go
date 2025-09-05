@@ -25,7 +25,7 @@ const (
 	// LockTimeout 分布式锁超时时间
 	LockTimeout = 10 * time.Minute
 	// BatchSize 处理批次大小
-	BatchSize = 1000
+	BatchSize = 100
 )
 
 // SubscriptionProcessor 处理订阅到期和自动续费
@@ -142,23 +142,23 @@ func (p *SubscriptionProcessor) releaseProcessingLock(lockID string) error {
 func (p *SubscriptionProcessor) processExpiredSubscriptions() error {
 	logrus.Info("Processing expired subscriptions")
 
-	// find subscriptions that have expired
+	// 首先处理正常状态的过期订阅（优先处理付费订阅续费）
 	var expiredSubscriptions []types.Subscription
 
 	err := p.db.Transaction(func(tx *gorm.DB) error {
-		// 查找已过期的订阅，包括正常状态和欠费状态的Free plan
+		// 查找已过期但状态仍为正常的订阅
 		return tx.Raw(`
 			SELECT s.* FROM "Subscription" s
-			WHERE s.expire_at < ? AND (s.status = ? OR (s.status = ? AND s.plan_name = ?))
+			WHERE s.expire_at < ? AND s.status = ?
 			LIMIT ?
-		`, time.Now().UTC().Add(10*time.Minute), types.SubscriptionStatusNormal, types.SubscriptionStatusDebt, types.FreeSubscriptionPlanName, BatchSize).Scan(&expiredSubscriptions).Error
+		`, time.Now().UTC().Add(10*time.Minute), types.SubscriptionStatusNormal, BatchSize).Scan(&expiredSubscriptions).Error
 	})
 
 	if err != nil {
 		return fmt.Errorf("failed to query expired subscriptions: %w", err)
 	}
 
-	logrus.Infof("Found %d expired subscriptions", len(expiredSubscriptions))
+	logrus.Infof("Found %d expired subscriptions with NORMAL status", len(expiredSubscriptions))
 
 	// process each expired subscription
 	for _, subscription := range expiredSubscriptions {
@@ -185,6 +185,32 @@ func (p *SubscriptionProcessor) processExpiredSubscriptions() error {
 			logrus.Errorf("Failed to process subscription %s: %v", subscription.ID, err)
 		}
 	}
+
+	// 其次处理欠费状态的 Free plan 订阅（检查是否满足恢复条件）
+	var debtFreeSubscriptions []types.Subscription
+	err = p.db.Transaction(func(tx *gorm.DB) error {
+		// 查找欠费状态的 Free plan 订阅，并关联用户表筛选已绑定 Telegram 的
+		return tx.Raw(`
+			SELECT s.* FROM "Subscription" s
+			JOIN "User" u ON s.user_uid = u.uid
+			WHERE s.expire_at < ? AND s.status = ? AND s.plan_name = ?
+				AND u."tgId" IS NOT NULL AND u."tgId" != 0
+			LIMIT ?
+		`, time.Now().UTC().Add(10*time.Minute), types.SubscriptionStatusDebt, types.FreeSubscriptionPlanName, 20).Scan(&debtFreeSubscriptions).Error
+	})
+
+	if err != nil {
+		logrus.Errorf("Failed to query debt free subscriptions: %v", err)
+	} else if len(debtFreeSubscriptions) > 0 {
+		logrus.Infof("Found %d debt free subscriptions with Telegram bound", len(debtFreeSubscriptions))
+		for _, subscription := range debtFreeSubscriptions {
+			// 这些订阅已经绑定了 Telegram，可以恢复
+			if err := p.HandlerSubscriptionTransaction(&subscription); err != nil {
+				logrus.Errorf("Failed to recover free subscription %s: %v", subscription.ID, err)
+			}
+		}
+	}
+
 	return nil
 }
 
